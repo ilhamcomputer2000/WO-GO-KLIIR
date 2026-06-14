@@ -6,6 +6,7 @@ import { useAuthStore } from "@/stores/auth-store";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { useDataStore } from "@/stores/data-store";
+import { NotificationBell } from "@/components/layout/notification-bell";
 
 interface DashboardHeaderProps {
   title: string;
@@ -38,6 +39,7 @@ export function DashboardHeader({ title, description }: DashboardHeaderProps) {
           <Badge variant="secondary" className="hidden sm:inline-flex">
             Super Admin
           </Badge>
+          <NotificationBell />
           <Avatar className="h-8 w-8">
             <AvatarFallback className="bg-primary text-primary-foreground text-xs">
               {user?.name?.charAt(0) ?? "S"}

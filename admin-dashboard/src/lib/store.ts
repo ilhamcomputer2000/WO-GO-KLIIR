@@ -17,6 +17,43 @@ export async function getMitraByEmail(email: string) {
     : memory.memoryGetMitraByEmail(email);
 }
 
+export async function getMitraById(id: string) {
+  return useDb()
+    ? supabase.supabaseGetMitraById(id)
+    : memory.memoryGetMitraById(id);
+}
+
+export async function updateMitraProfile(
+  id: string,
+  data: { name?: string; phone?: string; address?: string }
+) {
+  return useDb()
+    ? supabase.supabaseUpdateMitraProfile(id, data)
+    : memory.memoryUpdateMitraProfile(id, data);
+}
+
+export async function changeMitraPassword(
+  id: string,
+  currentPassword: string,
+  newPassword: string
+) {
+  return useDb()
+    ? supabase.supabaseChangeMitraPassword(id, currentPassword, newPassword)
+    : memory.memoryChangeMitraPassword(id, currentPassword, newPassword);
+}
+
+export async function registerMitra(data: {
+  name: string; email: string; password: string; phone: string;
+  address: string; religion: string; birthPlace: string; birthDate: string;
+  maritalStatus: string; gender: string; nik: string;
+  bankName: string; bankAccountNumber: string; bankAccountName: string;
+  ktpImageUrl: string;
+}) {
+  return useDb()
+    ? supabase.supabaseRegisterMitra(data)
+    : memory.memoryRegisterMitra(data);
+}
+
 export async function verifyMitraLogin(email: string, password: string) {
   if (useDb()) return supabase.supabaseVerifyMitraLogin(email, password);
   const mitra = await memory.memoryGetMitraByEmail(email);
@@ -64,6 +101,12 @@ export async function deleteWorkOrder(id: string) {
   return useDb()
     ? supabase.supabaseDeleteWorkOrder(id)
     : memory.memoryDeleteWorkOrder(id);
+}
+
+export async function updateWorkOrder(wo: import("@/types").WorkOrder) {
+  return useDb()
+    ? supabase.supabaseUpdateWorkOrder(wo)
+    : memory.memoryUpdateWorkOrder(wo);
 }
 
 export async function addWorkOrder(
@@ -122,11 +165,13 @@ export async function uploadProof(
   woId: string,
   mitraId: string,
   file: Buffer,
-  mimeType: string
+  mimeType: string,
+  proofType: "before" | "after" = "after",
+  remark?: string
 ) {
   return useDb()
-    ? supabase.supabaseUploadProof(woId, mitraId, file, mimeType)
-    : memory.memoryUploadProof(woId, mitraId, file, mimeType);
+    ? supabase.supabaseUploadProof(woId, mitraId, file, mimeType, proofType, remark)
+    : memory.memoryUploadProof(woId, mitraId, file, mimeType, proofType, remark);
 }
 
 export async function verifySlot(

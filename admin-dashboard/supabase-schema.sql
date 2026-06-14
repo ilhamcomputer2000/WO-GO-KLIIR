@@ -67,6 +67,8 @@ create table if not exists completion_proofs (
   slot_id text not null,
   image_url text not null,
   storage_path text,
+  proof_type text not null default 'after' check (proof_type in ('before','after')),
+  remark text,
   uploaded_at timestamptz default now()
 );
 
@@ -83,3 +85,57 @@ values
   ('mitra-002', 'Siti Rahayu', 'siti@email.com', '08222345678', 'mitra123', 'active', '2025-01-15', 3, 2250000),
   ('mitra-003', 'Agus Prasetyo', 'agus@email.com', '08333456789', 'mitra123', 'pending', '2025-01-20', 0, 0)
 on conflict (id) do nothing;
+
+-- ============================================================
+-- Migration: tambah kolom proof_type dan remark ke completion_proofs
+-- Jalankan ini jika tabel completion_proofs sudah ada sebelumnya
+-- ============================================================
+alter table completion_proofs
+  add column if not exists proof_type text not null default 'after'
+    check (proof_type in ('before','after')),
+  add column if not exists remark text;
+
+-- ============================================================
+-- Migration: tambah kolom KTP ke tabel mitra
+-- Jalankan ini jika tabel mitra sudah ada sebelumnya
+-- ============================================================
+alter table mitra
+  add column if not exists religion text,
+  add column if not exists birth_place text,
+  add column if not exists birth_date text,
+  add column if not exists marital_status text,
+  add column if not exists gender text,
+  add column if not exists ktp_image_url text;
+
+-- Migration: tambah kolom nik ke tabel mitra
+alter table mitra add column if not exists nik text;
+
+-- Migration: tambah kolom bank ke tabel mitra
+alter table mitra
+  add column if not exists bank_name text,
+  add column if not exists bank_account_number text,
+  add column if not exists bank_account_name text;
+
+-- ============================================================
+-- Tabel Notifications — untuk notifikasi realtime
+-- ============================================================
+create table if not exists notifications (
+  id uuid primary key default gen_random_uuid(),
+  type text not null,
+  title text not null,
+  body text not null,
+  data jsonb default null,
+  read boolean not null default false,
+  target text not null default 'all' check (target in ('admin','mitra','all')),
+  mitra_id text references mitra(id) on delete cascade,
+  created_at timestamptz default now()
+);
+
+-- Enable realtime untuk notifications
+alter publication supabase_realtime add table notifications;
+
+-- Index untuk query cepat
+create index if not exists idx_notifications_target on notifications(target);
+create index if not exists idx_notifications_mitra_id on notifications(mitra_id);
+create index if not exists idx_notifications_read on notifications(read);
+create index if not exists idx_notifications_created_at on notifications(created_at desc);

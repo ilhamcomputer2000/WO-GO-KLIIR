@@ -11,12 +11,14 @@ import {
   Platform,
   ScrollView,
 } from "react-native";
+import { useRouter } from "expo-router";
 import { loginMitra } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth-store";
 
 const DEMO = { email: "budi@email.com", password: "mitra123" };
 
 export default function LoginScreen() {
+  const router = useRouter();
   const setMitra = useAuthStore((s) => s.setMitra);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -97,6 +99,13 @@ export default function LoginScreen() {
           >
             <Text style={styles.demoText}>Gunakan Akun Demo (Budi)</Text>
           </TouchableOpacity>
+
+          <View style={styles.registerRow}>
+            <Text style={styles.registerHint}>Belum punya akun? </Text>
+            <TouchableOpacity onPress={() => router.push("/register")}>
+              <Text style={styles.registerLink}>Daftar Sekarang</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -152,4 +161,7 @@ const styles = StyleSheet.create({
   demoBtn: { marginTop: 12, alignItems: "center" },
   demoText: { color: "#1976d2", fontSize: 13 },
   error: { color: "#d32f2f", marginBottom: 8, fontSize: 13 },
+  registerRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", marginTop: 16 },
+  registerHint: { fontSize: 13, color: "#888" },
+  registerLink: { fontSize: 13, color: "#2e7d32", fontWeight: "700" },
 });

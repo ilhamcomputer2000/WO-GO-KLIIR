@@ -7,7 +7,7 @@ import type {
 } from "@/types";
 
 export function mapMitraRow(row: Record<string, unknown>): Mitra {
-  return {
+  const mitra: Mitra = {
     id: row.id as string,
     name: row.name as string,
     email: row.email as string,
@@ -18,6 +18,21 @@ export function mapMitraRow(row: Record<string, unknown>): Mitra {
     totalCommission: Number(row.total_commission ?? 0),
     address: row.address as string | undefined,
   };
+
+  // Extended KTP fields — stored as extra properties
+  const extended = mitra as unknown as Record<string, unknown>;
+  if (row.nik) extended.nik = row.nik;
+  if (row.religion) extended.religion = row.religion;
+  if (row.birth_place) extended.birthPlace = row.birth_place;
+  if (row.birth_date) extended.birthDate = row.birth_date;
+  if (row.marital_status) extended.maritalStatus = row.marital_status;
+  if (row.gender) extended.gender = row.gender;
+  if (row.ktp_image_url) extended.ktpImageUrl = row.ktp_image_url;
+  if (row.bank_name) extended.bankName = row.bank_name;
+  if (row.bank_account_number) extended.bankAccountNumber = row.bank_account_number;
+  if (row.bank_account_name) extended.bankAccountName = row.bank_account_name;
+
+  return mitra;
 }
 
 export function mapWorkOrderRow(row: Record<string, unknown>): WorkOrder {
@@ -87,6 +102,8 @@ export function mapProofRow(row: Record<string, unknown>): CompletionProof {
     mitraName: row.mitra_name as string,
     slotId: row.slot_id as string,
     imageUrl: row.image_url as string,
+    proofType: (row.proof_type as "before" | "after") ?? "after",
+    remark: row.remark as string | undefined,
     uploadedAt: row.uploaded_at as string,
   };
 }

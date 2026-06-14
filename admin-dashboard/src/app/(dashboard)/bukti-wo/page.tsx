@@ -1,14 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { Search, Camera, Filter, CheckCircle, XCircle } from "lucide-react";
-import { format } from "date-fns";
-import { id as localeId } from "date-fns/locale";
+import { Search, Camera, Filter, CheckCircle, XCircle, AlertCircle, Info } from "lucide-react";
 import { toast } from "sonner";
 import { DashboardHeader } from "@/components/layout/dashboard-header";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -23,12 +22,11 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
-import {
-  useDataStore,
-  getPayoutStatusLabel,
-} from "@/stores/data-store";
-import type { CompletionProof } from "@/types";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Separator } from "@/components/ui/separator";
+import { useDataStore, getPayoutStatusLabel } from "@/stores/data-store";
 
 function verificationBadge(status?: string) {
   const map: Record<string, string> = {
@@ -39,7 +37,7 @@ function verificationBadge(status?: string) {
   const labels: Record<string, string> = {
     pending_review: "Menunggu Review",
     approved: "Disetujui",
-    rejected: "Ditolak",
+    rejected: "Ditolak — Perlu Upload Ulang",
   };
   if (!status) return null;
   return (
@@ -60,114 +58,159 @@ export default function BuktiWoPage() {
   const [woFilter, setWoFilter] = useState("all");
   const [mitraFilter, setMitraFilter] = useState("all");
   const [reviewFilter, setReviewFilter] = useState("all");
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [selectedProof, setSelectedProof] = useState<CompletionProof | null>(
-    null
-  );
+  const [selectedSlotKey, setSelectedSlotKey] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
 
-  const getSlotVerification = (proof: CompletionProof) => {
-    const wo = workOrders.find((w) => w.id === proof.woId);
-    const slot = wo?.slots.find((s) => s.id === proof.slotId);
-    return slot?.verificationStatus;
+  // Reject dialog state
+  const [rejectTarget, setRejectTarget] = useState<(typeof slotGroups)[0] | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const [rejectLoading, setRejectLoading] = useState(false);
+
+  const getSlotData = (woId: string, slotId: string) => {
+    const wo = workOrders.find((w) => w.id === woId);
+    const slot = wo?.slots.find((s) => s.id === slotId);
+    return { wo, slot };
   };
 
-  const getPayout = (proof: CompletionProof) =>
-    payouts.find(
-      (p) =>
-        p.woId === proof.woId &&
-        p.slotId === proof.slotId &&
-        p.mitraId === proof.mitraId
-    );
+  const getPayout = (woId: string, slotId: string, mitraId: string) =>
+    payouts.find((p) => p.woId === woId && p.slotId === slotId && p.mitraId === mitraId);
 
-  const filtered = proofs.filter((p) => {
-    const vStatus = getSlotVerification(p);
+  const slotKeys = Array.from(
+    new Set(proofs.map((p) => `${p.woId}__${p.slotId}__${p.mitraId}`))
+  );
+
+  const slotGroups = slotKeys.map((key) => {
+    const [woId, slotId, mitraId] = key.split("__");
+    const slotProofs = proofs.filter(
+      (p) => p.woId === woId && p.slotId === slotId && p.mitraId === mitraId
+    );
+    const before = slotProofs.find((p) => p.proofType === "before");
+    const after = slotProofs.find((p) => p.proofType === "after");
+    const { wo, slot } = getSlotData(woId, slotId);
+    const vStatus = slot?.verificationStatus;
+    const payout = getPayout(woId, slotId, mitraId);
+    return { key, woId, slotId, mitraId, before, after, vStatus, payout, slotProofs, wo, slot };
+  });
+
+  const filtered = slotGroups.filter((g) => {
+    const proof = g.before ?? g.after;
+    if (!proof) return false;
     const matchSearch =
-      p.woId.toLowerCase().includes(search.toLowerCase()) ||
-      p.woTitle.toLowerCase().includes(search.toLowerCase()) ||
-      p.mitraName.toLowerCase().includes(search.toLowerCase());
-    const matchWo = woFilter === "all" || p.woId === woFilter;
-    const matchMitra = mitraFilter === "all" || p.mitraId === mitraFilter;
+      g.woId.toLowerCase().includes(search.toLowerCase()) ||
+      proof.woTitle.toLowerCase().includes(search.toLowerCase()) ||
+      proof.mitraName.toLowerCase().includes(search.toLowerCase());
+    const matchWo = woFilter === "all" || g.woId === woFilter;
+    const matchMitra = mitraFilter === "all" || g.mitraId === mitraFilter;
     const matchReview =
       reviewFilter === "all" ||
-      vStatus === reviewFilter ||
-      (!vStatus && reviewFilter === "pending_review");
+      g.vStatus === reviewFilter ||
+      (!g.vStatus && reviewFilter === "pending_review");
     return matchSearch && matchWo && matchMitra && matchReview;
   });
 
-  const pendingCount = proofs.filter(
-    (p) =>
-      getSlotVerification(p) === "pending_review" || !getSlotVerification(p)
+  const pendingCount = slotGroups.filter(
+    (g) => g.vStatus === "pending_review" || !g.vStatus
   ).length;
 
-  const handleVerify = async (proof: CompletionProof, action: "approve" | "reject") => {
+  const handleApprove = async (group: (typeof slotGroups)[0]) => {
     setProcessing(true);
     try {
-      await verifySlot(proof.woId, proof.mitraId, action);
-      toast.success(
-        action === "approve"
-          ? "Pekerjaan disetujui — lanjut upload bukti transfer di Bagi Hasil"
-          : "Pekerjaan ditolak — mitra diminta perbaiki"
-      );
-      setSelectedProof(null);
+      await verifySlot(group.woId, group.mitraId, "approve");
+      // Kirim notifikasi ke mitra
+      await fetch("/api/notifications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "slot_approved",
+          title: "✅ Pekerjaan Disetujui!",
+          body: `Pekerjaan ${group.before?.woTitle ?? group.woId} Anda telah disetujui admin. Komisi segera diproses.`,
+          target: "mitra",
+          mitra_id: group.mitraId,
+          data: { woId: group.woId },
+        }),
+      });
+      toast.success("Pekerjaan disetujui — lanjut upload bukti transfer di Bagi Hasil");
+      setSelectedSlotKey(null);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Verifikasi gagal");
+      toast.error(e instanceof Error ? e.message : "Gagal menyetujui");
     } finally {
       setProcessing(false);
     }
   };
 
+  const handleReject = async () => {
+    if (!rejectTarget) return;
+    if (!rejectReason.trim()) {
+      toast.error("Alasan penolakan wajib diisi");
+      return;
+    }
+    setRejectLoading(true);
+    try {
+      await verifySlot(rejectTarget.woId, rejectTarget.mitraId, "reject");
+      // Kirim notifikasi ke mitra dengan alasan
+      await fetch("/api/notifications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "slot_rejected",
+          title: "⚠️ Foto Pekerjaan Ditolak",
+          body: `Foto untuk WO ${rejectTarget.before?.woTitle ?? rejectTarget.woId} ditolak. Alasan: ${rejectReason.trim()}. Silakan upload foto yang benar — slot masih milik Anda.`,
+          target: "mitra",
+          mitra_id: rejectTarget.mitraId,
+          data: { woId: rejectTarget.woId, reason: rejectReason.trim() },
+        }),
+      });
+      toast.warning("Foto ditolak — mitra diberi notifikasi untuk upload ulang. Slot tetap milik mitra.");
+      setRejectTarget(null);
+      setRejectReason("");
+      setSelectedSlotKey(null);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Gagal menolak");
+    } finally {
+      setRejectLoading(false);
+    }
+  };
+
+  const selectedGroup = filtered.find((g) => g.key === selectedSlotKey);
+
   return (
     <>
       <DashboardHeader
         title="Bukti Penyelesaian WO"
-        description="Review bukti foto mitra — setujui jika pekerjaan sudah sesuai, lalu upload bukti transfer di menu Bagi Hasil"
+        description="Review foto sebelum & sesudah pekerjaan dari mitra CSO"
       />
       <div className="flex flex-1 flex-col gap-6 p-4 md:p-6 overflow-auto">
-        <div className="grid gap-4 sm:grid-cols-3">
-          <StatCard
-            title="Total Bukti"
-            value={filtered.length}
-            icon={Camera}
-            description="Foto terunggah mitra"
-          />
-          <StatCard
-            title="Menunggu Review"
-            value={pendingCount}
-            icon={Filter}
-            description="Perlu dicek admin"
-          />
-          <StatCard
-            title="Sudah Disetujui"
-            value={
-              proofs.filter((p) => getSlotVerification(p) === "approved").length
-            }
-            icon={CheckCircle}
-            description="Siap transfer komisi"
-          />
+
+        {/* Info algoritma reject */}
+        <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 flex items-start gap-2">
+          <Info className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
+          <p className="text-xs text-blue-800">
+            <strong>Alur reject:</strong> Saat foto ditolak, slot WO tetap milik mitra —
+            status kembali ke "sedang dikerjakan" dan mitra bisa upload foto ulang yang benar.
+            WO tidak hilang dari akun mitra.
+          </p>
         </div>
 
+        <div className="grid gap-4 sm:grid-cols-3">
+          <StatCard title="Total Slot" value={filtered.length} icon={Camera} description="Slot dengan bukti foto" />
+          <StatCard title="Menunggu Review" value={pendingCount} icon={Filter} description="Perlu dicek admin" />
+          <StatCard title="Sudah Disetujui" value={slotGroups.filter((g) => g.vStatus === "approved").length} icon={CheckCircle} description="Siap transfer komisi" />
+        </div>
+
+        {/* Filter */}
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
-              <Filter className="h-4 w-4" />
-              Filter Bukti
+              <Filter className="h-4 w-4" />Filter Bukti
             </CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col sm:flex-row gap-3">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Cari WO, judul, atau nama mitra..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-9"
-              />
+              <Input placeholder="Cari WO, judul, atau nama mitra..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
             </div>
             <Select value={reviewFilter} onValueChange={(v) => setReviewFilter(v ?? "all")}>
-              <SelectTrigger className="w-full sm:w-44">
-                <SelectValue placeholder="Status review" />
-              </SelectTrigger>
+              <SelectTrigger className="w-full sm:w-44"><SelectValue placeholder="Status review" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Semua Review</SelectItem>
                 <SelectItem value="pending_review">Menunggu Review</SelectItem>
@@ -176,107 +219,73 @@ export default function BuktiWoPage() {
               </SelectContent>
             </Select>
             <Select value={woFilter} onValueChange={(v) => setWoFilter(v ?? "all")}>
-              <SelectTrigger className="w-full sm:w-44">
-                <SelectValue placeholder="Semua WO" />
-              </SelectTrigger>
+              <SelectTrigger className="w-full sm:w-44"><SelectValue placeholder="Semua WO" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Semua WO</SelectItem>
-                {workOrders.map((wo) => (
-                  <SelectItem key={wo.id} value={wo.id}>
-                    {wo.id}
-                  </SelectItem>
-                ))}
+                {workOrders.map((wo) => <SelectItem key={wo.id} value={wo.id}>{wo.id}</SelectItem>)}
               </SelectContent>
             </Select>
-            <Select
-              value={mitraFilter}
-              onValueChange={(v) => setMitraFilter(v ?? "all")}
-            >
-              <SelectTrigger className="w-full sm:w-44">
-                <SelectValue placeholder="Semua Mitra" />
-              </SelectTrigger>
+            <Select value={mitraFilter} onValueChange={(v) => setMitraFilter(v ?? "all")}>
+              <SelectTrigger className="w-full sm:w-44"><SelectValue placeholder="Semua Mitra" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Semua Mitra</SelectItem>
-                {mitra.map((m) => (
-                  <SelectItem key={m.id} value={m.id}>
-                    {m.name}
-                  </SelectItem>
-                ))}
+                {mitra.map((m) => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}
               </SelectContent>
             </Select>
           </CardContent>
         </Card>
 
+        {/* Grid bukti */}
         {filtered.length === 0 ? (
-          <Card>
-            <CardContent className="py-16 text-center text-muted-foreground">
-              Belum ada bukti penyelesaian. Mitra mengunggah foto dari aplikasi
-              mobile setelah menyelesaikan pekerjaan.
-            </CardContent>
-          </Card>
+          <Card><CardContent className="py-16 text-center text-muted-foreground">Belum ada bukti penyelesaian.</CardContent></Card>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {filtered.map((proof) => {
-              const vStatus = getSlotVerification(proof);
-              const payout = getPayout(proof);
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {filtered.map((group) => {
+              const label = group.before?.mitraName ?? group.after?.mitraName ?? "";
+              const woTitle = group.before?.woTitle ?? group.after?.woTitle ?? "";
               return (
-                <Card key={proof.id} className="overflow-hidden">
-                  <button
-                    type="button"
-                    className="w-full"
-                    onClick={() => {
-                      setSelectedProof(proof);
-                      setPreviewUrl(proof.imageUrl);
-                    }}
-                  >
+                <Card key={group.key} className="overflow-hidden cursor-pointer hover:shadow-md transition-shadow" onClick={() => setSelectedSlotKey(group.key)}>
+                  <div className="grid grid-cols-2 gap-0.5 bg-muted">
                     <div className="relative aspect-[4/3] bg-muted">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={proof.imageUrl}
-                        alt={`Bukti ${proof.woId}`}
-                        className="object-cover w-full h-full"
-                      />
+                      {group.before
+                        ? <img src={group.before.imageUrl} alt="Before" className="object-cover w-full h-full" />
+                        : <div className="flex items-center justify-center h-full text-xs text-muted-foreground">Belum ada</div>}
+                      <span className="absolute top-1 left-1 bg-orange-500 text-white text-[10px] px-1.5 py-0.5 rounded font-semibold">SEBELUM</span>
                     </div>
-                  </button>
+                    <div className="relative aspect-[4/3] bg-muted">
+                      {group.after
+                        ? <img src={group.after.imageUrl} alt="After" className="object-cover w-full h-full" />
+                        : <div className="flex items-center justify-center h-full text-xs text-muted-foreground">Belum ada</div>}
+                      <span className="absolute top-1 left-1 bg-green-600 text-white text-[10px] px-1.5 py-0.5 rounded font-semibold">SETELAH</span>
+                    </div>
+                  </div>
                   <CardContent className="p-3 space-y-2">
                     <div className="flex items-center justify-between gap-2">
-                      <Badge variant="outline" className="font-mono text-xs">
-                        {proof.woId}
-                      </Badge>
-                      {verificationBadge(vStatus ?? "pending_review")}
+                      <Badge variant="outline" className="font-mono text-xs">{group.woId}</Badge>
+                      {verificationBadge(group.vStatus ?? "pending_review")}
                     </div>
-                    <p className="text-sm font-medium line-clamp-1">
-                      {proof.woTitle}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {proof.mitraName}
-                    </p>
-                    {payout && (
-                      <Badge variant="outline" className="text-[10px]">
-                        {getPayoutStatusLabel(payout.status)}
-                      </Badge>
-                    )}
-                    {(vStatus === "pending_review" || !vStatus) && (
+                    <p className="text-sm font-medium line-clamp-1">{woTitle}</p>
+                    <p className="text-xs text-muted-foreground">{label}</p>
+                    {group.payout && <Badge variant="outline" className="text-[10px]">{getPayoutStatusLabel(group.payout.status)}</Badge>}
+
+                    {/* Action buttons on card */}
+                    {(group.vStatus === "pending_review" || !group.vStatus) && group.after && (
                       <div className="flex gap-2 pt-1">
-                        <Button
-                          size="sm"
-                          className="flex-1 h-8"
-                          disabled={processing}
-                          onClick={() => handleVerify(proof, "approve")}
-                        >
-                          <CheckCircle className="h-3 w-3 mr-1" />
-                          Setujui
+                        <Button size="sm" className="flex-1 h-8" disabled={processing}
+                          onClick={(e) => { e.stopPropagation(); handleApprove(group); }}>
+                          <CheckCircle className="h-3 w-3 mr-1" />Setujui
                         </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="flex-1 h-8 text-red-600"
+                        <Button size="sm" variant="outline" className="flex-1 h-8 text-red-600 border-red-200 hover:bg-red-50"
                           disabled={processing}
-                          onClick={() => handleVerify(proof, "reject")}
-                        >
-                          <XCircle className="h-3 w-3 mr-1" />
-                          Tolak
+                          onClick={(e) => { e.stopPropagation(); setRejectTarget(group); setRejectReason(""); }}>
+                          <XCircle className="h-3 w-3 mr-1" />Tolak
                         </Button>
+                      </div>
+                    )}
+                    {group.vStatus === "rejected" && (
+                      <div className="flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 rounded px-2 py-1.5">
+                        <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                        Menunggu upload ulang dari mitra
                       </div>
                     )}
                   </CardContent>
@@ -287,48 +296,144 @@ export default function BuktiWoPage() {
         )}
       </div>
 
-      <Dialog
-        open={!!previewUrl}
-        onOpenChange={() => {
-          setPreviewUrl(null);
-          setSelectedProof(null);
-        }}
-      >
-        <DialogContent className="max-w-3xl">
+      {/* ── Detail Dialog ── */}
+      <Dialog open={!!selectedSlotKey} onOpenChange={() => setSelectedSlotKey(null)}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Review Bukti Penyelesaian</DialogTitle>
+            <DialogTitle>Detail Bukti Penyelesaian</DialogTitle>
           </DialogHeader>
-          {previewUrl && (
-            <div className="relative w-full aspect-[4/3]">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={previewUrl}
-                alt="Preview bukti"
-                className="object-contain w-full h-full rounded-md"
-              />
+          {selectedGroup && (
+            <div className="space-y-4">
+              {/* Info WO + Mitra */}
+              <div className="rounded-lg border bg-muted/40 p-3 grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
+                <span className="text-muted-foreground">ID WO</span>
+                <span className="font-mono font-semibold">{selectedGroup.woId}</span>
+                <span className="text-muted-foreground">Judul</span>
+                <span className="font-medium line-clamp-1">{selectedGroup.before?.woTitle ?? selectedGroup.after?.woTitle ?? "—"}</span>
+                <span className="text-muted-foreground">Mitra</span>
+                <span>{selectedGroup.before?.mitraName ?? selectedGroup.after?.mitraName ?? "—"}</span>
+                <span className="text-muted-foreground">Slot</span>
+                <span>{selectedGroup.slot?.slotNumber ? `Slot ${selectedGroup.slot.slotNumber}` : "—"}</span>
+                <span className="text-muted-foreground">Progress</span>
+                <span>{selectedGroup.slot?.progress ?? 0}%</span>
+                <span className="text-muted-foreground">Status</span>
+                <span>{verificationBadge(selectedGroup.vStatus ?? "pending_review")}</span>
+              </div>
+
+              <Separator />
+
+              {/* Foto tabs */}
+              <Tabs defaultValue="before">
+                <TabsList>
+                  <TabsTrigger value="before">📷 Foto Sebelum</TabsTrigger>
+                  <TabsTrigger value="after">✅ Foto Setelah</TabsTrigger>
+                </TabsList>
+                <TabsContent value="before">
+                  {selectedGroup.before ? (
+                    <div className="space-y-3">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={selectedGroup.before.imageUrl} alt="Foto sebelum" className="w-full rounded-lg object-contain max-h-72 border" />
+                      {selectedGroup.before.remark && (
+                        <div className="rounded-md bg-orange-50 border border-orange-100 p-3">
+                          <p className="text-xs font-semibold text-orange-700 mb-1">Catatan Mitra:</p>
+                          <p className="text-sm text-orange-900">{selectedGroup.before.remark}</p>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground py-8 text-center">Foto sebelum belum diunggah</p>
+                  )}
+                </TabsContent>
+                <TabsContent value="after">
+                  {selectedGroup.after ? (
+                    <div className="space-y-3">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={selectedGroup.after.imageUrl} alt="Foto setelah" className="w-full rounded-lg object-contain max-h-72 border" />
+                      {selectedGroup.after.remark && (
+                        <div className="rounded-md bg-green-50 border border-green-100 p-3">
+                          <p className="text-xs font-semibold text-green-700 mb-1">Catatan Mitra:</p>
+                          <p className="text-sm text-green-900">{selectedGroup.after.remark}</p>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground py-8 text-center">Foto setelah belum diunggah</p>
+                  )}
+                </TabsContent>
+              </Tabs>
+
+              {/* Action buttons di dialog */}
+              {(selectedGroup.vStatus === "pending_review" || !selectedGroup.vStatus) && selectedGroup.after && (
+                <div className="flex gap-2 pt-2">
+                  <Button className="flex-1" disabled={processing} onClick={() => handleApprove(selectedGroup)}>
+                    <CheckCircle className="mr-2 h-4 w-4" />Pekerjaan Sesuai — Setujui
+                  </Button>
+                  <Button variant="outline" className="flex-1 text-red-600 border-red-200 hover:bg-red-50"
+                    disabled={processing}
+                    onClick={() => { setRejectTarget(selectedGroup); setRejectReason(""); }}>
+                    <XCircle className="mr-2 h-4 w-4" />Foto Tidak Sesuai — Tolak
+                  </Button>
+                </div>
+              )}
+
+              {selectedGroup.vStatus === "rejected" && (
+                <div className="rounded-md bg-amber-50 border border-amber-200 p-3 flex items-start gap-2">
+                  <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-sm font-semibold text-amber-800">Foto sudah ditolak</p>
+                    <p className="text-xs text-amber-700 mt-0.5">Mitra sedang diminta upload foto ulang. Slot tetap milik mitra.</p>
+                  </div>
+                </div>
+              )}
             </div>
           )}
-          {selectedProof &&
-            (getSlotVerification(selectedProof) === "pending_review" ||
-              !getSlotVerification(selectedProof)) && (
-              <div className="flex gap-2">
-                <Button
-                  className="flex-1"
-                  disabled={processing}
-                  onClick={() => handleVerify(selectedProof, "approve")}
-                >
-                  Pekerjaan Sesuai — Setujui
-                </Button>
-                <Button
-                  variant="outline"
-                  className="flex-1 text-red-600"
-                  disabled={processing}
-                  onClick={() => handleVerify(selectedProof, "reject")}
-                >
-                  Tidak Sesuai — Tolak
-                </Button>
-              </div>
-            )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Reject Dialog — dengan input alasan ── */}
+      <Dialog open={!!rejectTarget} onOpenChange={(o) => { if (!o) { setRejectTarget(null); setRejectReason(""); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-700">
+              <XCircle className="h-5 w-5" />
+              Tolak Foto Pekerjaan
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-md bg-blue-50 border border-blue-100 p-3 flex items-start gap-2">
+              <Info className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
+              <p className="text-xs text-blue-800">
+                <strong>Slot tetap milik mitra.</strong> Mitra akan mendapat notifikasi dan dapat mengupload foto yang benar.
+                WO tidak akan hilang dari akun mitra.
+              </p>
+            </div>
+
+            <div>
+              <p className="text-sm font-medium mb-2">Alasan Penolakan <span className="text-red-500">*</span></p>
+              <Textarea
+                placeholder="Contoh: Foto tidak jelas / buram. Foto tidak menunjukkan area yang dikerjakan. Mohon foto ulang dengan pencahayaan yang cukup."
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                rows={4}
+                className="resize-none"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Alasan ini akan dikirim sebagai notifikasi ke mitra.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setRejectTarget(null); setRejectReason(""); }} disabled={rejectLoading}>
+              Batal
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={!rejectReason.trim() || rejectLoading}
+              onClick={handleReject}
+            >
+              {rejectLoading ? "Menolak..." : "Tolak & Kirim Notifikasi"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>

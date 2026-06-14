@@ -99,6 +99,37 @@ export async function memoryDeleteMitra(id: string) {
   return { success: true as const };
 }
 
+export async function memoryGetMitraById(id: string) {
+  return getStore().mitra.find((m) => m.id === id);
+}
+
+export async function memoryUpdateMitraProfile(
+  id: string,
+  data: { name?: string; phone?: string; address?: string }
+) {
+  const mitra = getStore().mitra.find((m) => m.id === id);
+  if (!mitra) return { success: false as const, error: "Mitra tidak ditemukan" };
+  if (data.name) mitra.name = data.name;
+  if (data.phone !== undefined) mitra.phone = data.phone;
+  if (data.address !== undefined) mitra.address = data.address;
+  return { success: true as const, mitra };
+}
+
+export async function memoryChangeMitraPassword(
+  id: string,
+  currentPassword: string,
+  newPassword: string
+) {
+  const store = getStore();
+  const row = store.mitra.find((m) => m.id === id) as (typeof store.mitra[0] & { password?: string }) | undefined;
+  if (!row) return { success: false as const, error: "Mitra tidak ditemukan" };
+  const stored = (row as unknown as Record<string, string>).password ?? "mitra123";
+  if (stored !== currentPassword)
+    return { success: false as const, error: "Password lama tidak sesuai" };
+  (row as unknown as Record<string, string>).password = newPassword;
+  return { success: true as const };
+}
+
 export async function memoryDeleteWorkOrder(id: string) {
   const store = getStore();
   const idx = store.workOrders.findIndex((wo) => wo.id === id);
@@ -108,6 +139,57 @@ export async function memoryDeleteWorkOrder(id: string) {
   store.payouts = store.payouts.filter((p) => p.woId !== id);
   store.proofs = store.proofs.filter((p) => p.woId !== id);
   return { success: true as const };
+}
+
+export async function memoryUpdateWorkOrder(wo: WorkOrder) {
+  const store = getStore();
+  const idx = store.workOrders.findIndex((w) => w.id === wo.id);
+  if (idx === -1) return { success: false as const, error: "WO tidak ditemukan" };
+  store.workOrders[idx] = wo;
+  return { success: true as const, workOrder: wo };
+}
+
+export async function memoryRegisterMitra(data: {
+  name: string; email: string; password: string; phone: string;
+  address: string; religion: string; birthPlace: string; birthDate: string;
+  maritalStatus: string; gender: string; nik: string;
+  bankName: string; bankAccountNumber: string; bankAccountName: string;
+  ktpImageUrl: string;
+}) {
+  const store = getStore();
+  const existing = store.mitra.find(
+    (m) => m.email.toLowerCase() === data.email.toLowerCase()
+  );
+  if (existing)
+    return { success: false as const, error: "Email sudah terdaftar" };
+
+  const id = `mitra-${Date.now()}`;
+  const now = new Date().toISOString().split("T")[0];
+  const newMitra = {
+    id,
+    name: data.name,
+    email: data.email,
+    phone: data.phone,
+    password: data.password,
+    status: "pending" as const,
+    registeredAt: now,
+    completedWO: 0,
+    totalCommission: 0,
+    address: data.address,
+    // Extended KTP fields stored as address metadata
+    religion: data.religion,
+    birthPlace: data.birthPlace,
+    birthDate: data.birthDate,
+    maritalStatus: data.maritalStatus,
+    gender: data.gender,
+    nik: data.nik,
+    bankName: data.bankName,
+    bankAccountNumber: data.bankAccountNumber,
+    bankAccountName: data.bankAccountName,
+    ktpImageUrl: data.ktpImageUrl,
+  };
+  store.mitra.push(newMitra as unknown as import("@/types").Mitra);
+  return { success: true as const, mitra: newMitra as unknown as import("@/types").Mitra };
 }
 
 export async function memoryGetWorkOrders() {
@@ -334,7 +416,9 @@ export async function memoryUploadProof(
   woId: string,
   mitraId: string,
   file: Buffer,
-  mimeType: string
+  mimeType: string,
+  proofType: "before" | "after" = "after",
+  remark?: string
 ) {
   const store = getStore();
   const wo = store.workOrders.find((w) => w.id === woId);
@@ -353,7 +437,28 @@ export async function memoryUploadProof(
   await writeFile(path.join(uploadDir, filename), file);
 
   const imageUrl = `/uploads/proofs/${filename}`;
-  slot.proofUrl = imageUrl;
+
+  // Update slot fields based on photo type
+  if (proofType === "before") {
+    slot.beforePhotoUrl = imageUrl;
+    slot.beforeRemark = remark;
+    slot.progress = 50;
+  } else {
+    slot.afterPhotoUrl = imageUrl;
+    slot.afterRemark = remark;
+    slot.progress = 100;
+    // Auto-complete slot when after photo is uploaded
+    if (slot.status === "taken") {
+      slot.status = "completed";
+      const mitraData = store.mitra.find((m) => m.id === mitraId);
+      if (mitraData) mitraData.completedWO += 1;
+      ensurePayoutOnComplete(store, wo, slot);
+    }
+  }
+
+  recalcWoProgress(wo);
+  checkWoCompletion(wo);
+  if (wo.status !== "completed" && wo.status !== "verified") wo.status = "in_progress";
 
   const proof: CompletionProof = {
     id: randomUUID(),
@@ -363,6 +468,8 @@ export async function memoryUploadProof(
     mitraName: mitra.name,
     slotId: slot.id,
     imageUrl,
+    proofType,
+    remark,
     uploadedAt: new Date().toISOString(),
   };
   store.proofs.unshift(proof);

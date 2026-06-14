@@ -1,6 +1,17 @@
 import { NextResponse } from "next/server";
-import { deleteMitra, updateMitraStatus } from "@/lib/store";
+import { deleteMitra, getMitraById, updateMitraProfile, updateMitraStatus } from "@/lib/store";
 import type { MitraStatus } from "@/types";
+
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const mitra = await getMitraById(id);
+  if (!mitra)
+    return NextResponse.json({ error: "Mitra tidak ditemukan" }, { status: 404 });
+  return NextResponse.json({ mitra });
+}
 
 export async function PATCH(
   request: Request,
@@ -8,9 +19,27 @@ export async function PATCH(
 ) {
   const { id } = await params;
   const body = await request.json();
-  const { status } = body as { status: MitraStatus };
 
-  const result = await updateMitraStatus(id, status);
+  // Update status (admin)
+  if (body.status) {
+    const { status } = body as { status: MitraStatus };
+    const result = await updateMitraStatus(id, status);
+    if (!result.success)
+      return NextResponse.json({ error: result.error }, { status: 404 });
+    return NextResponse.json({ mitra: result.mitra });
+  }
+
+  // Update profile (mitra)
+  const { name, phone, address } = body as {
+    name?: string;
+    phone?: string;
+    address?: string;
+  };
+
+  if (!name && !phone && address === undefined)
+    return NextResponse.json({ error: "Tidak ada data yang diupdate" }, { status: 400 });
+
+  const result = await updateMitraProfile(id, { name, phone, address });
   if (!result.success)
     return NextResponse.json({ error: result.error }, { status: 404 });
   return NextResponse.json({ mitra: result.mitra });

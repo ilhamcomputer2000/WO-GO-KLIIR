@@ -65,6 +65,54 @@ async function persistWorkOrder(wo: WorkOrder) {
   if (error) throw new Error(error.message);
 }
 
+export async function supabaseRegisterMitra(data: {
+  name: string; email: string; password: string; phone: string;
+  address: string; religion: string; birthPlace: string; birthDate: string;
+  maritalStatus: string; gender: string; nik: string;
+  bankName: string; bankAccountNumber: string; bankAccountName: string;
+  ktpImageUrl: string;
+}) {
+  // Check duplicate email
+  const { data: existing } = await db()
+    .from("mitra")
+    .select("id")
+    .ilike("email", data.email)
+    .maybeSingle();
+  if (existing)
+    return { success: false as const, error: "Email sudah terdaftar" };
+
+  const id = `mitra-${Date.now()}`;
+  const now = new Date().toISOString().split("T")[0];
+  const { data: row, error } = await db()
+    .from("mitra")
+    .insert({
+      id,
+      name: data.name,
+      email: data.email,
+      password: data.password,
+      phone: data.phone,
+      status: "pending",
+      registered_at: now,
+      completed_wo: 0,
+      total_commission: 0,
+      address: data.address,
+      religion: data.religion,
+      birth_place: data.birthPlace,
+      birth_date: data.birthDate,
+      marital_status: data.maritalStatus,
+      gender: data.gender,
+      nik: data.nik,
+      bank_name: data.bankName,
+      bank_account_number: data.bankAccountNumber,
+      bank_account_name: data.bankAccountName,
+      ktp_image_url: data.ktpImageUrl,
+    })
+    .select()
+    .single();
+  if (error) return { success: false as const, error: error.message };
+  return { success: true as const, mitra: mapMitraRow(row) };
+}
+
 export async function supabaseGetMitraList() {
   const { data, error } = await db().from("mitra").select("*").order("name");
   if (error) throw new Error(error.message);
@@ -84,12 +132,14 @@ export async function supabaseGetMitraByEmail(email: string) {
 export async function supabaseVerifyMitraLogin(email: string, password: string) {
   const { data, error } = await db()
     .from("mitra")
-    .select("*")
+    .select("id, name, email, phone, status, registered_at, completed_wo, total_commission, address, password, nik, religion, birth_place, birth_date, marital_status, gender, ktp_image_url, bank_name, bank_account_number, bank_account_name")
     .ilike("email", email)
     .maybeSingle();
   if (error) throw new Error(error.message);
-  if (!data || (data.password as string) !== password) return null;
-  return mapMitraRow(data);
+  if (!data) return null;
+  const storedPassword = (data as Record<string, unknown>).password as string;
+  if (!storedPassword || storedPassword !== password) return null;
+  return mapMitraRow(data as Record<string, unknown>);
 }
 
 export async function supabaseUpdateMitraStatus(id: string, status: MitraStatus) {
@@ -110,10 +160,67 @@ export async function supabaseDeleteMitra(id: string) {
   return { success: true as const };
 }
 
+export async function supabaseGetMitraById(id: string) {
+  const { data, error } = await db().from("mitra").select("*").eq("id", id).maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? mapMitraRow(data) : undefined;
+}
+
+export async function supabaseUpdateMitraProfile(
+  id: string,
+  data: { name?: string; phone?: string; address?: string }
+) {
+  const updates: Record<string, unknown> = {};
+  if (data.name) updates.name = data.name;
+  if (data.phone !== undefined) updates.phone = data.phone;
+  if (data.address !== undefined) updates.address = data.address;
+
+  const { data: row, error } = await db()
+    .from("mitra")
+    .update(updates)
+    .eq("id", id)
+    .select()
+    .single();
+  if (error || !row)
+    return { success: false as const, error: "Mitra tidak ditemukan" };
+  return { success: true as const, mitra: mapMitraRow(row) };
+}
+
+export async function supabaseChangeMitraPassword(
+  id: string,
+  currentPassword: string,
+  newPassword: string
+) {
+  const { data, error } = await db()
+    .from("mitra")
+    .select("password")
+    .eq("id", id)
+    .maybeSingle();
+  if (error || !data)
+    return { success: false as const, error: "Mitra tidak ditemukan" };
+  if ((data as Record<string, string>).password !== currentPassword)
+    return { success: false as const, error: "Password lama tidak sesuai" };
+  const { error: updErr } = await db()
+    .from("mitra")
+    .update({ password: newPassword })
+    .eq("id", id);
+  if (updErr) return { success: false as const, error: updErr.message };
+  return { success: true as const };
+}
+
 export async function supabaseDeleteWorkOrder(id: string) {
   const { error } = await db().from("work_orders").delete().eq("id", id);
   if (error) return { success: false as const, error: error.message };
   return { success: true as const };
+}
+
+export async function supabaseUpdateWorkOrder(wo: WorkOrder) {
+  const { error } = await db()
+    .from("work_orders")
+    .update(workOrderToDb(wo))
+    .eq("id", wo.id);
+  if (error) return { success: false as const, error: error.message };
+  return { success: true as const, workOrder: wo };
 }
 
 export async function supabaseGetWorkOrders() {
@@ -304,7 +411,9 @@ export async function supabaseUploadProof(
   woId: string,
   mitraId: string,
   file: Buffer,
-  mimeType: string
+  mimeType: string,
+  proofType: "before" | "after" = "after",
+  remark?: string
 ) {
   const wo = await supabaseGetWorkOrderById(woId);
   const { data: mitraRow } = await db()
@@ -322,7 +431,7 @@ export async function supabaseUploadProof(
     return { success: false as const, error: "Anda belum mengambil slot di WO ini" };
 
   const ext = mimeType.includes("png") ? "png" : "jpg";
-  const storagePath = `${woId}/${mitraId}/${randomUUID()}.${ext}`;
+  const storagePath = `${woId}/${mitraId}/${proofType}-${randomUUID()}.${ext}`;
 
   const { error: uploadError } = await db()
     .storage.from("wo-proofs")
@@ -344,10 +453,40 @@ export async function supabaseUploadProof(
     slot_id: slot.id,
     image_url: imageUrl,
     storage_path: storagePath,
+    proof_type: proofType,
+    remark: remark ?? null,
   });
   if (insertError) return { success: false as const, error: insertError.message };
 
-  slot.proofUrl = imageUrl;
+  // Update slot fields based on photo type
+  if (proofType === "before") {
+    slot.beforePhotoUrl = imageUrl;
+    slot.beforeRemark = remark;
+    slot.progress = 50;
+  } else {
+    slot.afterPhotoUrl = imageUrl;
+    slot.afterRemark = remark;
+    slot.progress = 100;
+    if (slot.status === "taken") {
+      slot.status = "completed";
+      const { data: mitraRow2 } = await db()
+        .from("mitra")
+        .select("completed_wo")
+        .eq("id", mitraId)
+        .single();
+      if (mitraRow2) {
+        await db()
+          .from("mitra")
+          .update({ completed_wo: Number(mitraRow2.completed_wo ?? 0) + 1 })
+          .eq("id", mitraId);
+      }
+      await ensurePayoutOnComplete(wo, slot);
+    }
+  }
+
+  recalcWoProgress(wo);
+  checkWoCompletion(wo);
+  if (wo.status !== "completed" && wo.status !== "verified") wo.status = "in_progress";
   await persistWorkOrder(wo);
 
   const proof: CompletionProof = {
@@ -358,6 +497,8 @@ export async function supabaseUploadProof(
     mitraName: mitra.name,
     slotId: slot.id,
     imageUrl,
+    proofType,
+    remark,
     uploadedAt: new Date().toISOString(),
   };
 

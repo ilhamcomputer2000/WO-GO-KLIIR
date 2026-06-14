@@ -31,7 +31,10 @@ export interface WorkOrderSlot {
   mitraName?: string;
   status: SlotStatus;
   progress?: number;
-  proofUrl?: string;
+  beforePhotoUrl?: string;
+  beforeRemark?: string;
+  afterPhotoUrl?: string;
+  afterRemark?: string;
   verificationStatus?: SlotVerificationStatus;
   verifiedAt?: string;
 }
@@ -60,6 +63,8 @@ export interface CompletionProof {
   mitraName: string;
   slotId: string;
   imageUrl: string;
+  proofType: "before" | "after";
+  remark?: string;
   uploadedAt: string;
 }
 

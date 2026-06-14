@@ -41,10 +41,14 @@ export interface WorkOrderSlot {
   mitraId?: string;
   mitraName?: string;
   status: SlotStatus;
-  /** Progress pekerjaan per CSO (0–100) */
+  /** Progress pekerjaan per CSO (0–100) — ditentukan sistem berdasarkan foto */
   progress?: number;
-  /** URL foto bukti penyelesaian */
-  proofUrl?: string;
+  /** Foto sebelum mulai pekerjaan */
+  beforePhotoUrl?: string;
+  beforeRemark?: string;
+  /** Foto setelah selesai pekerjaan */
+  afterPhotoUrl?: string;
+  afterRemark?: string;
   /** Status verifikasi admin setelah mitra selesai */
   verificationStatus?: SlotVerificationStatus;
   verifiedAt?: string;
@@ -58,6 +62,10 @@ export interface CompletionProof {
   mitraName: string;
   slotId: string;
   imageUrl: string;
+  /** Jenis foto: sebelum atau sesudah pekerjaan */
+  proofType: "before" | "after";
+  /** Catatan/keterangan dari mitra */
+  remark?: string;
   uploadedAt: string;
 }
 

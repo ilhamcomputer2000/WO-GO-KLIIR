@@ -88,6 +88,8 @@ export const useDataStore = create<DataState>()((set, get) => ({
   dataSource: null,
 
   sync: async () => {
+    // Prevent concurrent syncs
+    if (get().isSyncing) return;
     set({ isSyncing: true, syncError: null });
     try {
       const data = await fetchSync();

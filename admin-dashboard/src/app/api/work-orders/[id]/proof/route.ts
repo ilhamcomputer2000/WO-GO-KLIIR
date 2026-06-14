@@ -9,15 +9,24 @@ export async function POST(
 
   try {
     const body = await request.json();
-    const { mitraId, base64, mimeType } = body as {
+    const { mitraId, base64, mimeType, proofType, remark } = body as {
       mitraId?: string;
       base64?: string;
       mimeType?: string;
+      proofType?: "before" | "after";
+      remark?: string;
     };
 
-    if (!mitraId || !base64 || !mimeType) {
+    if (!mitraId || !base64 || !mimeType || !proofType) {
       return NextResponse.json(
-        { error: "mitraId, base64, dan mimeType wajib diisi" },
+        { error: "mitraId, base64, mimeType, dan proofType wajib diisi" },
+        { status: 400 }
+      );
+    }
+
+    if (!["before", "after"].includes(proofType)) {
+      return NextResponse.json(
+        { error: "proofType harus 'before' atau 'after'" },
         { status: 400 }
       );
     }
@@ -39,14 +48,16 @@ export async function POST(
       );
     }
 
-    const result = await uploadProof(woId, mitraId, buffer, mimeType);
+    const result = await uploadProof(woId, mitraId, buffer, mimeType, proofType, remark);
 
     if (!result.success) {
       return NextResponse.json({ error: result.error }, { status: 400 });
     }
 
     return NextResponse.json({
-      message: "Bukti penyelesaian berhasil diunggah",
+      message: proofType === "before"
+        ? "Foto sebelum pekerjaan berhasil diunggah"
+        : "Foto setelah pekerjaan berhasil diunggah",
       proof: result.proof,
       workOrder: result.workOrder,
     });

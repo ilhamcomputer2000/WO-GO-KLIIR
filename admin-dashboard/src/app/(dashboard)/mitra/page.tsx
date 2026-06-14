@@ -35,7 +35,9 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -63,6 +65,10 @@ export default function MitraPage() {
   const [selectedMitra, setSelectedMitra] = useState<Mitra | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Mitra | null>(null);
   const [activeTab, setActiveTab] = useState("all");
+  const [ktpPreviewUrl, setKtpPreviewUrl] = useState<string | null>(null);
+  const [rejectTarget, setRejectTarget] = useState<Mitra | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const [rejectLoading, setRejectLoading] = useState(false);
 
   const filterMitra = (list: Mitra[]) => {
     const q = search.toLowerCase();
@@ -81,12 +87,45 @@ export default function MitraPage() {
 
   const handleApprove = async (m: Mitra) => {
     await updateMitraStatus(m.id, "active");
-    toast.success(`Akun ${m.name} berhasil di-ACC`);
+    // Kirim email notifikasi approve
+    await fetch("/api/mitra/notify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mitraId: m.id, type: "approved", email: m.email, name: m.name }),
+    });
+    toast.success(`Akun ${m.name} berhasil di-ACC — email notifikasi dikirim`);
   };
 
   const handleSuspend = async (m: Mitra) => {
     await updateMitraStatus(m.id, "suspended");
     toast.warning(`Akun ${m.name} di-suspend`);
+  };
+
+  const handleReject = async () => {
+    if (!rejectTarget) return;
+    setRejectLoading(true);
+    try {
+      await updateMitraStatus(rejectTarget.id, "suspended");
+      // Kirim email notifikasi reject
+      await fetch("/api/mitra/notify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mitraId: rejectTarget.id,
+          type: "rejected",
+          email: rejectTarget.email,
+          name: rejectTarget.name,
+          reason: rejectReason,
+        }),
+      });
+      toast.error(`Pendaftaran ${rejectTarget.name} ditolak — email notifikasi dikirim`);
+      setRejectTarget(null);
+      setRejectReason("");
+    } catch {
+      toast.error("Gagal menolak pendaftaran");
+    } finally {
+      setRejectLoading(false);
+    }
   };
 
   const handleDelete = async () => {
@@ -156,6 +195,15 @@ export default function MitraPage() {
                       <DropdownMenuItem onClick={() => handleApprove(m)}>
                         <CheckCircle className="mr-2 h-4 w-4 text-green-600" />
                         Approve (ACC)
+                      </DropdownMenuItem>
+                    )}
+                    {m.status === "pending" && (
+                      <DropdownMenuItem
+                        className="text-red-600"
+                        onClick={() => { setRejectTarget(m); setRejectReason(""); }}
+                      >
+                        <Ban className="mr-2 h-4 w-4" />
+                        Tolak Pendaftaran
                       </DropdownMenuItem>
                     )}
                     {m.status === "active" && (
@@ -242,29 +290,65 @@ export default function MitraPage() {
             </DialogDescription>
           </DialogHeader>
           {selectedMitra && (
-            <div className="space-y-3 text-sm">
-              <div className="grid grid-cols-2 gap-2">
-                <span className="text-muted-foreground">ID Mitra</span>
-                <span className="font-mono">{selectedMitra.id}</span>
-                <span className="text-muted-foreground">Nama</span>
+            <div className="space-y-3 text-sm overflow-y-auto max-h-[60vh]">
+              <div className="grid grid-cols-2 gap-y-2 gap-x-4">
+                <span className="text-muted-foreground">ID</span>
+                <span className="font-mono text-xs">{selectedMitra.id}</span>
+                {(selectedMitra as unknown as Record<string,string>).nik && (<><span className="text-muted-foreground">NIK KTP</span><span className="font-mono text-xs">{(selectedMitra as unknown as Record<string,string>).nik}</span></>)}
+                <span className="text-muted-foreground">Nama Lengkap</span>
                 <span className="font-medium">{selectedMitra.name}</span>
                 <span className="text-muted-foreground">Email</span>
                 <span>{selectedMitra.email}</span>
                 <span className="text-muted-foreground">Telepon</span>
-                <span>{selectedMitra.phone}</span>
-                <span className="text-muted-foreground">Alamat</span>
-                <span>{selectedMitra.address ?? "—"}</span>
+                <span>{selectedMitra.phone || "—"}</span>
+                <span className="text-muted-foreground">Alamat KTP</span>
+                <span className="text-xs">{selectedMitra.address ?? "—"}</span>
+                {(selectedMitra as unknown as Record<string,string>).religion && (<><span className="text-muted-foreground">Agama</span><span>{(selectedMitra as unknown as Record<string,string>).religion}</span></>)}
+                {(selectedMitra as unknown as Record<string,string>).gender && (<><span className="text-muted-foreground">Jenis Kelamin</span><span>{(selectedMitra as unknown as Record<string,string>).gender}</span></>)}
+                {(selectedMitra as unknown as Record<string,string>).birthPlace && (<><span className="text-muted-foreground">Tempat Lahir</span><span>{(selectedMitra as unknown as Record<string,string>).birthPlace}</span></>)}
+                {(selectedMitra as unknown as Record<string,string>).birthDate && (<><span className="text-muted-foreground">Tgl Lahir</span><span>{(selectedMitra as unknown as Record<string,string>).birthDate}</span></>)}
+                {(selectedMitra as unknown as Record<string,string>).maritalStatus && (<><span className="text-muted-foreground">Status Kawin</span><span>{(selectedMitra as unknown as Record<string,string>).maritalStatus}</span></>)}
+                {(selectedMitra as unknown as Record<string,string>).bankName && (
+                  <>
+                    <span className="text-muted-foreground col-span-2 font-semibold text-foreground pt-1">Rekening Bank</span>
+                    <span className="text-muted-foreground">Nama Bank</span>
+                    <span>{(selectedMitra as unknown as Record<string,string>).bankName}</span>
+                    <span className="text-muted-foreground">No. Rekening</span>
+                    <span className="font-mono">{(selectedMitra as unknown as Record<string,string>).bankAccountNumber}</span>
+                    <span className="text-muted-foreground">Atas Nama</span>
+                    <span>{(selectedMitra as unknown as Record<string,string>).bankAccountName}</span>
+                  </>
+                )}
                 <span className="text-muted-foreground">Terdaftar</span>
                 <span>{selectedMitra.registeredAt}</span>
                 <span className="text-muted-foreground">Status</span>
                 <Badge className={statusBadge(selectedMitra.status)} variant="secondary">
                   {getMitraStatusLabel(selectedMitra.status)}
                 </Badge>
-                <span className="text-muted-foreground">WO Selesai</span>
-                <span>{selectedMitra.completedWO}</span>
-                <span className="text-muted-foreground">Total Komisi</span>
-                <span>{formatCurrency(selectedMitra.totalCommission)}</span>
               </div>
+              {(selectedMitra as unknown as Record<string,string>).ktpImageUrl && (
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground mb-2">Foto KTP:</p>
+                  <button
+                    type="button"
+                    className="w-full"
+                    onClick={() => setKtpPreviewUrl((selectedMitra as unknown as Record<string,string>).ktpImageUrl)}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={(selectedMitra as unknown as Record<string,string>).ktpImageUrl}
+                      alt="KTP"
+                      className="w-full rounded-lg border object-contain max-h-44 cursor-zoom-in hover:opacity-90 transition-opacity"
+                    />
+                    <p className="text-xs text-center text-muted-foreground mt-1">🔍 Klik untuk perbesar</p>
+                  </button>
+                </div>
+              )}
+              {selectedMitra.status === "pending" && (
+                <Button size="sm" className="w-full" onClick={async () => { await handleApprove(selectedMitra); setSelectedMitra(null); }}>
+                  <CheckCircle className="mr-1 h-4 w-4" /> ACC — Aktifkan Akun
+                </Button>
+              )}
             </div>
           )}
         </DialogContent>
@@ -290,6 +374,67 @@ export default function MitraPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Reject Dialog */}
+      <Dialog open={!!rejectTarget} onOpenChange={(o) => { if (!o) { setRejectTarget(null); setRejectReason(""); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Tolak Pendaftaran</DialogTitle>
+            <DialogDescription>
+              Pendaftaran <strong>{rejectTarget?.name}</strong> akan ditolak dan mitra akan diberitahu via email.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <label className="text-sm font-medium">Alasan Penolakan *</label>
+            <Textarea
+              placeholder="Contoh: Foto KTP tidak jelas, data tidak lengkap, NIK tidak valid..."
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              rows={4}
+            />
+            <p className="text-xs text-muted-foreground">
+              Alasan ini akan dicantumkan dalam email yang dikirim ke mitra.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setRejectTarget(null); setRejectReason(""); }}>
+              Batal
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={!rejectReason.trim() || rejectLoading}
+              onClick={handleReject}
+            >
+              {rejectLoading ? "Mengirim..." : "Tolak & Kirim Email"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* KTP Lightbox */}
+      {ktpPreviewUrl && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80"
+          onClick={() => setKtpPreviewUrl(null)}
+        >
+          <div className="relative max-w-3xl w-full mx-4" onClick={(e) => e.stopPropagation()}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={ktpPreviewUrl}
+              alt="KTP Full"
+              className="w-full rounded-xl object-contain max-h-[80vh]"
+            />
+            <button
+              type="button"
+              onClick={() => setKtpPreviewUrl(null)}
+              className="absolute -top-3 -right-3 bg-white rounded-full w-8 h-8 flex items-center justify-center shadow-lg text-gray-700 hover:bg-gray-100 font-bold text-lg"
+            >
+              ×
+            </button>
+            <p className="text-center text-white/60 text-xs mt-2">Klik di luar gambar untuk tutup</p>
+          </div>
+        </div>
+      )}
     </>
   );
 }

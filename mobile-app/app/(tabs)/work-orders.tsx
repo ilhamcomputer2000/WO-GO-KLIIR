@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { fetchAvailableWorkOrders } from "@/lib/api";
+import { supabase } from "@/lib/supabase";
 import type { WorkOrder } from "@/types";
 import { WOCard } from "@/components/WOCard";
 
@@ -17,25 +18,72 @@ export default function WorkOrdersScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+  const abortRef = useRef<AbortController | null>(null);
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
-  const load = async () => {
+  const load = useCallback(async (signal?: AbortSignal) => {
     try {
       setError("");
-      const res = await fetchAvailableWorkOrders();
+      const res = await fetchAvailableWorkOrders(signal);
+      if (signal?.aborted) return;
       setWorkOrders(res.workOrders);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Gagal memuat data");
+      if (e instanceof Error && (e.name === "AbortError" || e.message.includes("canceled") || e.message.includes("aborted"))) {
+        return;
+      }
+      if (!signal?.aborted) {
+        setError(e instanceof Error ? e.message : "Gagal memuat data");
+      }
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (!signal?.aborted) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
-  };
+  }, []);
+
+  // Supabase Realtime — auto-refresh saat ada WO baru atau WO diupdate
+  useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const channel = (supabase.channel as any)("wo-available-list")
+      .on("postgres_changes", {
+        event: "INSERT",
+        schema: "public",
+        table: "work_orders",
+      }, () => {
+        // WO baru dibuat — fetch ulang tanpa loading spinner
+        const controller = new AbortController();
+        load(controller.signal);
+      })
+      .on("postgres_changes", {
+        event: "UPDATE",
+        schema: "public",
+        table: "work_orders",
+      }, () => {
+        // WO diupdate (slot diambil, status berubah) — refresh silent
+        const controller = new AbortController();
+        load(controller.signal);
+      })
+      .subscribe();
+
+    channelRef.current = channel;
+    return () => {
+      supabase.removeChannel(channel);
+      channelRef.current = null;
+    };
+  }, [load]);
 
   useFocusEffect(
     useCallback(() => {
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
       setLoading(true);
-      load();
-    }, [])
+      load(controller.signal);
+      return () => {
+        controller.abort();
+      };
+    }, [load])
   );
 
   if (loading) {
@@ -60,8 +108,11 @@ export default function WorkOrdersScreen() {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={() => {
+              abortRef.current?.abort();
+              const controller = new AbortController();
+              abortRef.current = controller;
               setRefreshing(true);
-              load();
+              load(controller.signal);
             }}
             colors={["#2e7d32"]}
           />

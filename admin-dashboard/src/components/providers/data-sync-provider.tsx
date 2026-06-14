@@ -5,7 +5,7 @@ import { useDataStore } from "@/stores/data-store";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, RefreshCw } from "lucide-react";
 
-const SYNC_INTERVAL_MS = 5000;
+const SYNC_INTERVAL_MS = 30000; // 30 detik — cukup untuk dashboard admin
 
 export function DataSyncProvider({ children }: { children: React.ReactNode }) {
   const sync = useDataStore((s) => s.sync);
@@ -15,7 +15,12 @@ export function DataSyncProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     sync();
-    const interval = setInterval(sync, SYNC_INTERVAL_MS);
+    const interval = setInterval(() => {
+      // Guard: jangan sync kalau masih ada yang running
+      if (!useDataStore.getState().isSyncing) {
+        sync();
+      }
+    }, SYNC_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [sync]);
 

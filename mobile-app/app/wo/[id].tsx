@@ -1,3 +1,4 @@
+"use client";
 import { useCallback, useRef, useState } from "react";
 import {
   View,
@@ -8,6 +9,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  TextInput,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
@@ -18,10 +20,8 @@ import {
   getVerificationLabel,
   resolveImageUrl,
   takeSlot,
-  updateProgress,
   uploadProof,
 } from "@/lib/api";
-import { supabase } from "@/lib/supabase";
 import type { PayoutRecord } from "@/types";
 import { useAuthStore } from "@/stores/auth-store";
 import type { WorkOrder } from "@/types";
@@ -40,13 +40,14 @@ export default function WorkOrderDetailScreen() {
   const [wo, setWo] = useState<WorkOrder | null>(null);
   const [loading, setLoading] = useState(true);
   const [taking, setTaking] = useState(false);
-  const [updating, setUpdating] = useState(false);
-  const [uploading, setUploading] = useState(false);
+  const [uploading, setUploading] = useState<"before" | "after" | null>(null);
   const [myPayout, setMyPayout] = useState<PayoutRecord | null>(null);
-  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const [beforeRemark, setBeforeRemark] = useState("");
+  const [afterRemark, setAfterRemark] = useState("");
+  const [fetchingLocation, setFetchingLocation] = useState(false);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Initial load
-  const load = async () => {
+  const load = async (silent = false) => {
     if (!id) return;
     try {
       const res = await fetchWorkOrder(id);
@@ -57,32 +58,11 @@ export default function WorkOrderDetailScreen() {
         setMyPayout(payout ?? null);
       }
     } catch (e) {
-      Alert.alert("Error", e instanceof Error ? e.message : "Gagal memuat WO");
+      if (!silent) {
+        Alert.alert("Error", e instanceof Error ? e.message : "Gagal memuat WO");
+      }
     } finally {
-      setLoading(false);
-    }
-  };
-
-  // Refresh payout from API (lightweight)
-  const refreshPayout = async () => {
-    if (!mitra || !id) return;
-    try {
-      const payoutRes = await fetchMitraPayouts(mitra.id);
-      const payout = payoutRes.payouts.find((p) => p.woId === id);
-      setMyPayout(payout ?? null);
-    } catch {
-      // silent
-    }
-  };
-
-  // Refresh WO from API
-  const refreshWo = async () => {
-    if (!id) return;
-    try {
-      const res = await fetchWorkOrder(id);
-      setWo(res.workOrder);
-    } catch {
-      // silent
+      if (!silent) setLoading(false);
     }
   };
 
@@ -90,71 +70,20 @@ export default function WorkOrderDetailScreen() {
     useCallback(() => {
       setLoading(true);
       load();
-
-      // Subscribe to Supabase Realtime changes
-      const channel = supabase
-        .channel(`wo-detail-${id}`)
-        // Listen to work_orders table changes for this WO
-        .on(
-          "postgres_changes",
-          {
-            event: "UPDATE",
-            schema: "public",
-            table: "work_orders",
-            filter: `id=eq.${id}`,
-          },
-          () => {
-            refreshWo();
-          }
-        )
-        // Listen to payouts table changes for this mitra + WO
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "payouts",
-            filter: `wo_id=eq.${id}`,
-          },
-          () => {
-            refreshPayout();
-          }
-        )
-        .subscribe();
-
-      channelRef.current = channel;
-
+      intervalRef.current = setInterval(() => load(true), 8000);
       return () => {
-        if (channelRef.current) {
-          supabase.removeChannel(channelRef.current);
-          channelRef.current = null;
+        if (intervalRef.current) {
+          clearInterval(intervalRef.current);
+          intervalRef.current = null;
         }
       };
     }, [id, mitra?.id])
   );
 
-  const handleUpdateProgress = async (progress: number) => {
-    if (!mitra || !wo) return;
-    setUpdating(true);
-    try {
-      const res = await updateProgress(wo.id, mitra.id, progress);
-      setWo(res.workOrder);
-      if (progress >= 100) {
-        Alert.alert("Selesai!", "Pekerjaan Anda telah ditandai selesai.");
-      } else {
-        Alert.alert("Tersimpan", `Progress diperbarui ke ${progress}%`);
-      }
-    } catch (e) {
-      Alert.alert(
-        "Gagal",
-        e instanceof Error ? e.message : "Tidak bisa update progress"
-      );
-    } finally {
-      setUpdating(false);
-    }
-  };
-
-  const handleUploadProof = async (useCamera: boolean) => {
+  const pickAndUpload = async (
+    proofType: "before" | "after",
+    useCamera: boolean
+  ) => {
     if (!mitra || !wo) return;
 
     const permission = useCamera
@@ -162,7 +91,7 @@ export default function WorkOrderDetailScreen() {
       : await ImagePicker.requestMediaLibraryPermissionsAsync();
 
     if (!permission.granted) {
-      Alert.alert("Izin diperlukan", "Izinkan akses kamera/galeri untuk upload bukti.");
+      Alert.alert("Izin diperlukan", "Izinkan akses kamera/galeri.");
       return;
     }
 
@@ -180,35 +109,38 @@ export default function WorkOrderDetailScreen() {
 
     if (result.canceled || !result.assets[0]) return;
 
+    const manualRemark = proofType === "before" ? beforeRemark : afterRemark;
+    const fullRemark = manualRemark.trim() || undefined;
+
     const asset = result.assets[0];
-    setUploading(true);
+    setUploading(proofType);
     try {
       const res = await uploadProof(
         wo.id,
         mitra.id,
         asset.uri,
-        asset.mimeType ?? "image/jpeg"
+        asset.mimeType ?? "image/jpeg",
+        proofType,
+        fullRemark
       );
       setWo(res.workOrder);
-      Alert.alert("Berhasil", "Bukti penyelesaian berhasil diunggah.");
-    } catch (e) {
+      if (proofType === "before") setBeforeRemark("");
+      else setAfterRemark("");
       Alert.alert(
-        "Gagal",
-        e instanceof Error ? e.message : "Tidak bisa upload bukti"
+        "Berhasil",
+        proofType === "before"
+          ? "Foto sebelum pekerjaan berhasil diunggah."
+          : "Foto setelah pekerjaan berhasil diunggah. Pekerjaan ditandai selesai!"
       );
+    } catch (e) {
+      Alert.alert("Gagal", e instanceof Error ? e.message : "Upload gagal");
     } finally {
-      setUploading(false);
+      setUploading(null);
     }
   };
 
   const handleTakeSlot = async () => {
     if (!mitra || !wo) return;
-
-    const mySlot = wo.slots.find((s) => s.mitraId === mitra.id);
-    if (mySlot) {
-      Alert.alert("Info", "Anda sudah mengambil slot di WO ini.");
-      return;
-    }
 
     Alert.alert(
       "Ambil Slot CSO",
@@ -228,10 +160,7 @@ export default function WorkOrderDetailScreen() {
                 [{ text: "OK", onPress: () => router.push("/(tabs)/my-work") }]
               );
             } catch (e) {
-              Alert.alert(
-                "Gagal",
-                e instanceof Error ? e.message : "Tidak bisa ambil slot"
-              );
+              Alert.alert("Gagal", e instanceof Error ? e.message : "Tidak bisa ambil slot");
             } finally {
               setTaking(false);
             }
@@ -252,9 +181,10 @@ export default function WorkOrderDetailScreen() {
   const openSlots = getOpenSlotCount(wo);
   const mySlot = wo.slots.find((s) => s.mitraId === mitra?.id);
   const canTake = !mySlot && openSlots > 0;
+  const progress = mySlot?.progress ?? 0;
 
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
       <Text style={styles.id}>{wo.id}</Text>
       <Text style={styles.title}>{wo.title}</Text>
       <Text style={styles.desc}>{wo.description}</Text>
@@ -265,32 +195,19 @@ export default function WorkOrderDetailScreen() {
         <InfoItem label="Tanggal" value={formatDate(wo.workDate)} />
         <InfoItem label="Jam" value={`${wo.startTime} – ${wo.endTime}`} />
         <InfoItem label="Durasi/CSO" value={formatDuration(wo.durationMinutes)} />
-        <InfoItem
-          label="Komisi/CSO"
-          value={formatCurrency(getCommissionPerCso(wo))}
-          highlight
-        />
+        <InfoItem label="Komisi/CSO" value={formatCurrency(getCommissionPerCso(wo))} highlight />
       </View>
 
+      {/* Slot list */}
       <Text style={styles.sectionTitle}>
         Slot CSO ({wo.requiredCso - openSlots}/{wo.requiredCso} terisi)
       </Text>
       {wo.slots.map((slot) => (
-        <View
-          key={slot.id}
-          style={[
-            styles.slotRow,
-            slot.mitraId === mitra?.id && styles.slotMine,
-          ]}
-        >
+        <View key={slot.id} style={[styles.slotRow, slot.mitraId === mitra?.id && styles.slotMine]}>
           <Text style={styles.slotNum}>Slot {slot.slotNumber}</Text>
           <View style={{ alignItems: "flex-end" }}>
             <Text style={styles.slotStatus}>
-              {slot.status === "open"
-                ? "Terbuka"
-                : slot.mitraId === mitra?.id
-                  ? "Anda"
-                  : slot.mitraName ?? "Terisi"}
+              {slot.status === "open" ? "Terbuka" : slot.mitraId === mitra?.id ? "Anda" : slot.mitraName ?? "Terisi"}
             </Text>
             {slot.progress !== undefined && slot.status !== "open" && (
               <Text style={styles.slotProgress}>{slot.progress}%</Text>
@@ -299,124 +216,207 @@ export default function WorkOrderDetailScreen() {
         </View>
       ))}
 
+      {/* Ambil slot */}
       {canTake && (
         <TouchableOpacity
           style={[styles.takeBtn, taking && styles.takeBtnDisabled]}
           onPress={handleTakeSlot}
           disabled={taking}
         >
-          {taking ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.takeBtnText}>
-              Ambil Slot ({openSlots} tersisa)
-            </Text>
+          {taking ? <ActivityIndicator color="#fff" /> : (
+            <Text style={styles.takeBtnText}>Ambil Slot ({openSlots} tersisa)</Text>
           )}
         </TouchableOpacity>
       )}
 
+      {/* Progress bar (read-only, sistem) */}
       {mySlot && (
-        <View style={styles.proofSection}>
-          <Text style={styles.sectionTitle}>Bukti Penyelesaian</Text>
-          {mySlot.proofUrl ? (
-            <Image
-              source={{ uri: resolveImageUrl(mySlot.proofUrl) }}
-              style={styles.proofImage}
-              resizeMode="cover"
-            />
-          ) : (
-            <Text style={styles.proofHint}>
-              Unggah foto bukti pekerjaan (sebelum/sesudah selesai)
-            </Text>
-          )}
-          <View style={styles.proofBtns}>
-            <TouchableOpacity
-              style={[styles.proofBtn, uploading && styles.proofBtnDisabled]}
-              onPress={() => handleUploadProof(true)}
-              disabled={uploading}
-            >
-              <Text style={styles.proofBtnText}>Ambil Foto</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.proofBtnOutline, uploading && styles.proofBtnDisabled]}
-              onPress={() => handleUploadProof(false)}
-              disabled={uploading}
-            >
-              <Text style={styles.proofBtnOutlineText}>Dari Galeri</Text>
-            </TouchableOpacity>
-          </View>
-          {uploading && (
-            <ActivityIndicator color="#2e7d32" style={{ marginTop: 8 }} />
-          )}
-        </View>
-      )}
-
-      {mySlot && mySlot.status !== "completed" && (
         <View style={styles.progressSection}>
-          <Text style={styles.sectionTitle}>Update Progress Anda</Text>
+          <View style={styles.progressHeader}>
+            <Text style={styles.progressLabel}>Progress Pekerjaan</Text>
+            <Text style={styles.progressPct}>{progress}%</Text>
+          </View>
           <View style={styles.progressBarBg}>
-            <View
-              style={[
-                styles.progressBarFill,
-                { width: `${mySlot.progress ?? 0}%` },
-              ]}
-            />
+            <View style={[styles.progressBarFill, { width: `${progress}%` as any }]} />
           </View>
-          <Text style={styles.progressLabel}>
-            Progress slot Anda: {mySlot.progress ?? 0}%
-          </Text>
-          <Text style={styles.progressWoLabel}>
-            Progress total WO: {wo.progress}%
-          </Text>
-          <View style={styles.progressBtns}>
-            {[25, 50, 75, 100].map((pct) => (
-              <TouchableOpacity
-                key={pct}
-                style={[
-                  styles.progressBtn,
-                  (mySlot.progress ?? 0) >= pct && styles.progressBtnDone,
-                ]}
-                onPress={() => handleUpdateProgress(pct)}
-                disabled={updating}
-              >
-                <Text
-                  style={[
-                    styles.progressBtnText,
-                    (mySlot.progress ?? 0) >= pct && styles.progressBtnTextDone,
-                  ]}
+          <View style={styles.progressSteps}>
+            <ProgressStep done={progress >= 0} label="Ambil slot" />
+            <ProgressStep done={progress >= 50} label="Foto sebelum" />
+            <ProgressStep done={progress >= 100} label="Foto setelah" />
+          </View>
+        </View>
+      )}
+
+      {/* Foto SEBELUM */}
+      {mySlot && mySlot.status !== "completed" && (
+        <View style={styles.photoCard}>
+          <View style={styles.photoCardHeader}>
+            <View style={[styles.photoBadge, { backgroundColor: "#fff3e0" }]}>
+              <Text style={[styles.photoBadgeText, { color: "#e65100" }]}>SEBELUM</Text>
+            </View>
+            <Text style={styles.photoCardTitle}>Foto Sebelum Mulai</Text>
+          </View>
+
+          {mySlot.beforePhotoUrl ? (
+            <>
+              <Image
+                source={{ uri: resolveImageUrl(mySlot.beforePhotoUrl) }}
+                style={styles.proofImage}
+                resizeMode="cover"
+              />
+              {mySlot.beforeRemark ? (
+                <View style={styles.remarkDisplay}>
+                  <Text style={styles.remarkLabel}>Catatan:</Text>
+                  <Text style={styles.remarkText}>{mySlot.beforeRemark}</Text>
+                </View>
+              ) : null}
+              <View style={styles.uploadedBadge}>
+                <Text style={styles.uploadedText}>✓ Foto sebelum sudah diunggah</Text>
+              </View>
+            </>
+          ) : (
+            <>
+              <Text style={styles.photoHint}>
+                Ambil foto kondisi area/peralatan sebelum mulai pekerjaan
+              </Text>
+              <TextInput
+                style={styles.remarkInput}
+                placeholder="Catatan sebelum mulai (opsional)..."
+                value={beforeRemark}
+                onChangeText={setBeforeRemark}
+                multiline
+                numberOfLines={2}
+                placeholderTextColor="#aaa"
+              />
+              <View style={styles.photoBtns}>
+                <TouchableOpacity
+                  style={[styles.photoBtn, uploading === "before" && styles.photoBtnDisabled]}
+                  onPress={() => pickAndUpload("before", true)}
+                  disabled={uploading !== null || fetchingLocation}
                 >
-                  {pct}%
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          {updating && (
-            <ActivityIndicator color="#2e7d32" style={{ marginTop: 8 }} />
+                  <Text style={styles.photoBtnText}>📷 Ambil Foto</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.photoBtnOutline, uploading === "before" && styles.photoBtnDisabled]}
+                  onPress={() => pickAndUpload("before", false)}
+                  disabled={uploading !== null || fetchingLocation}
+                >
+                  <Text style={styles.photoBtnOutlineText}>🖼 Dari Galeri</Text>
+                </TouchableOpacity>
+              </View>
+              {fetchingLocation && (
+                <View style={styles.locationLoading}>
+                  <ActivityIndicator size="small" color="#e65100" />
+                  <Text style={styles.locationLoadingText}>Mengambil lokasi GPS...</Text>
+                </View>
+              )}
+              {uploading === "before" && (
+                <ActivityIndicator color="#e65100" style={{ marginTop: 8 }} />
+              )}
+            </>
           )}
         </View>
       )}
 
+      {/* Foto SETELAH — hanya muncul setelah foto before ada */}
+      {mySlot && mySlot.status !== "completed" && mySlot.beforePhotoUrl && (
+        <View style={styles.photoCard}>
+          <View style={styles.photoCardHeader}>
+            <View style={[styles.photoBadge, { backgroundColor: "#e8f5e9" }]}>
+              <Text style={[styles.photoBadgeText, { color: "#2e7d32" }]}>SETELAH</Text>
+            </View>
+            <Text style={styles.photoCardTitle}>Foto Setelah Selesai</Text>
+          </View>
+
+          {mySlot.afterPhotoUrl ? (
+            <>
+              <Image
+                source={{ uri: resolveImageUrl(mySlot.afterPhotoUrl) }}
+                style={styles.proofImage}
+                resizeMode="cover"
+              />
+              {mySlot.afterRemark ? (
+                <View style={styles.remarkDisplay}>
+                  <Text style={styles.remarkLabel}>Catatan:</Text>
+                  <Text style={styles.remarkText}>{mySlot.afterRemark}</Text>
+                </View>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <Text style={styles.photoHint}>
+                Ambil foto kondisi area/hasil pekerjaan setelah selesai
+              </Text>
+              <TextInput
+                style={styles.remarkInput}
+                placeholder="Catatan setelah selesai (opsional)..."
+                value={afterRemark}
+                onChangeText={setAfterRemark}
+                multiline
+                numberOfLines={2}
+                placeholderTextColor="#aaa"
+              />
+              <View style={styles.photoBtns}>
+                <TouchableOpacity
+                  style={[styles.photoBtn, { backgroundColor: "#2e7d32" }, uploading === "after" && styles.photoBtnDisabled]}
+                  onPress={() => pickAndUpload("after", true)}
+                  disabled={uploading !== null || fetchingLocation}
+                >
+                  <Text style={styles.photoBtnText}>📷 Ambil Foto</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.photoBtnOutline, uploading === "after" && styles.photoBtnDisabled]}
+                  onPress={() => pickAndUpload("after", false)}
+                  disabled={uploading !== null || fetchingLocation}
+                >
+                  <Text style={styles.photoBtnOutlineText}>🖼 Dari Galeri</Text>
+                </TouchableOpacity>
+              </View>
+              {fetchingLocation && (
+                <View style={styles.locationLoading}>
+                  <ActivityIndicator size="small" color="#2e7d32" />
+                  <Text style={styles.locationLoadingText}>Mengambil lokasi GPS...</Text>
+                </View>
+              )}
+              {uploading === "after" && (
+                <ActivityIndicator color="#2e7d32" style={{ marginTop: 8 }} />
+              )}
+            </>
+          )}
+        </View>
+      )}
+
+      {/* Completed banner */}
       {mySlot?.status === "completed" && (
         <View style={styles.completedBanner}>
-          <Text style={styles.completedText}>
-            Pekerjaan selesai — Slot {mySlot.slotNumber} ✓
-          </Text>
-          <Text style={styles.statusSubtext}>
-            {getVerificationLabel(mySlot.verificationStatus)}
-          </Text>
-          {myPayout && (
-            <Text style={styles.statusSubtext}>
-              Komisi: {getPayoutStatusLabel(myPayout.status)}
-            </Text>
+          <Text style={styles.completedText}>Pekerjaan selesai — Slot {mySlot.slotNumber} ✓</Text>
+
+          {/* Show both photos */}
+          {mySlot.beforePhotoUrl && (
+            <View style={styles.completedPhotoRow}>
+              <Text style={styles.completedPhotoLabel}>Foto Sebelum:</Text>
+              <Image source={{ uri: resolveImageUrl(mySlot.beforePhotoUrl) }} style={styles.completedPhoto} resizeMode="cover" />
+              {mySlot.beforeRemark ? <Text style={styles.completedRemark}>"{mySlot.beforeRemark}"</Text> : null}
+            </View>
           )}
-          {myPayout?.status === "paid" && myPayout.transferProofUrl && (
-            <Text style={styles.statusPaid}>
-              Bukti transfer sudah diunggah admin ✓
-            </Text>
+          {mySlot.afterPhotoUrl && (
+            <View style={styles.completedPhotoRow}>
+              <Text style={styles.completedPhotoLabel}>Foto Setelah:</Text>
+              <Image source={{ uri: resolveImageUrl(mySlot.afterPhotoUrl) }} style={styles.completedPhoto} resizeMode="cover" />
+              {mySlot.afterRemark ? <Text style={styles.completedRemark}>"{mySlot.afterRemark}"</Text> : null}
+            </View>
+          )}
+
+          <Text style={styles.statusSubtext}>{getVerificationLabel(mySlot.verificationStatus)}</Text>
+          {myPayout && (
+            <Text style={styles.statusSubtext}>Komisi: {getPayoutStatusLabel(myPayout.status)}</Text>
+          )}
+          {myPayout?.status === "paid" && (
+            <Text style={styles.statusPaid}>Bukti transfer sudah diunggah admin ✓</Text>
           )}
           {mySlot.verificationStatus === "rejected" && (
             <Text style={styles.statusRejected}>
-              Perbaiki pekerjaan, update progress, dan upload bukti ulang.
+              Pekerjaan ditolak admin. Harap perbaiki dan upload foto ulang.
             </Text>
           )}
         </View>
@@ -427,25 +427,28 @@ export default function WorkOrderDetailScreen() {
           <Text style={styles.fullText}>Semua slot sudah penuh</Text>
         </View>
       )}
+
+      <View style={{ height: 32 }} />
     </ScrollView>
   );
 }
 
-function InfoItem({
-  label,
-  value,
-  highlight,
-}: {
-  label: string;
-  value: string;
-  highlight?: boolean;
-}) {
+function InfoItem({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
   return (
     <View style={styles.infoItem}>
       <Text style={styles.infoLabel}>{label}</Text>
-      <Text style={[styles.infoValue, highlight && styles.infoHighlight]}>
-        {value}
-      </Text>
+      <Text style={[styles.infoValue, highlight && styles.infoHighlight]}>{value}</Text>
+    </View>
+  );
+}
+
+function ProgressStep({ done, label }: { done: boolean; label: string }) {
+  return (
+    <View style={styles.stepItem}>
+      <View style={[styles.stepDot, done && styles.stepDotDone]}>
+        <Text style={styles.stepDotText}>{done ? "✓" : "○"}</Text>
+      </View>
+      <Text style={[styles.stepLabel, done && styles.stepLabelDone]}>{label}</Text>
     </View>
   );
 }
@@ -456,165 +459,66 @@ const styles = StyleSheet.create({
   id: { fontSize: 12, color: "#888", fontFamily: "monospace" },
   title: { fontSize: 22, fontWeight: "bold", color: "#1a1a1a", marginTop: 4 },
   desc: { fontSize: 14, color: "#666", marginTop: 8, lineHeight: 20 },
-  infoGrid: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 14,
-    marginTop: 16,
-    gap: 10,
-    borderWidth: 1,
-    borderColor: "#e8f5e9",
-  },
+  infoGrid: { backgroundColor: "#fff", borderRadius: 12, padding: 14, marginTop: 16, gap: 10, borderWidth: 1, borderColor: "#e8f5e9" },
   infoItem: { flexDirection: "row", justifyContent: "space-between" },
   infoLabel: { fontSize: 13, color: "#888" },
   infoValue: { fontSize: 13, fontWeight: "600", color: "#333" },
   infoHighlight: { color: "#2e7d32", fontSize: 15 },
-  sectionTitle: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#333",
-    marginTop: 20,
-    marginBottom: 10,
-  },
-  slotRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    backgroundColor: "#fff",
-    padding: 12,
-    borderRadius: 10,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: "#eee",
-  },
+  sectionTitle: { fontSize: 15, fontWeight: "700", color: "#333", marginTop: 20, marginBottom: 10 },
+  slotRow: { flexDirection: "row", justifyContent: "space-between", backgroundColor: "#fff", padding: 12, borderRadius: 10, marginBottom: 8, borderWidth: 1, borderColor: "#eee" },
   slotMine: { borderColor: "#2e7d32", backgroundColor: "#f1f8f1" },
   slotNum: { fontWeight: "600", color: "#333" },
   slotStatus: { color: "#666", fontSize: 13 },
   slotProgress: { color: "#2e7d32", fontSize: 11, fontWeight: "600", marginTop: 2 },
-  proofSection: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 16,
-    borderWidth: 1,
-    borderColor: "#e8f5e9",
-  },
-  proofImage: {
-    width: "100%",
-    height: 180,
-    borderRadius: 10,
-    marginBottom: 10,
-    backgroundColor: "#f0f0f0",
-  },
-  proofHint: { fontSize: 13, color: "#888", marginBottom: 10 },
-  proofBtns: { flexDirection: "row", gap: 8 },
-  proofBtn: {
-    flex: 1,
-    backgroundColor: "#2e7d32",
-    borderRadius: 8,
-    paddingVertical: 12,
-    alignItems: "center",
-  },
-  proofBtnOutline: {
-    flex: 1,
-    borderRadius: 8,
-    paddingVertical: 12,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#2e7d32",
-  },
-  proofBtnText: { color: "#fff", fontWeight: "600", fontSize: 13 },
-  proofBtnOutlineText: { color: "#2e7d32", fontWeight: "600", fontSize: 13 },
-  proofBtnDisabled: { opacity: 0.6 },
-  progressSection: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 16,
-    marginBottom: 32,
-    borderWidth: 1,
-    borderColor: "#e8f5e9",
-  },
-  progressBarBg: {
-    height: 10,
-    backgroundColor: "#e8f5e9",
-    borderRadius: 5,
-    overflow: "hidden",
-    marginBottom: 8,
-  },
-  progressBarFill: {
-    height: "100%",
-    backgroundColor: "#2e7d32",
-    borderRadius: 5,
-  },
-  progressLabel: { fontSize: 14, fontWeight: "600", color: "#333" },
-  progressWoLabel: { fontSize: 12, color: "#888", marginTop: 2, marginBottom: 12 },
-  progressBtns: { flexDirection: "row", gap: 8 },
-  progressBtn: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#2e7d32",
-    alignItems: "center",
-  },
-  progressBtnDone: { backgroundColor: "#2e7d32" },
-  progressBtnText: { color: "#2e7d32", fontWeight: "600", fontSize: 13 },
-  progressBtnTextDone: { color: "#fff" },
-  completedBanner: {
-    backgroundColor: "#e8f5e9",
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 16,
-    marginBottom: 32,
-    alignItems: "center",
-  },
-  completedText: { color: "#2e7d32", fontWeight: "700", fontSize: 15 },
-  statusSubtext: {
-    color: "#555",
-    fontSize: 13,
-    marginTop: 6,
-    textAlign: "center",
-  },
-  statusPaid: {
-    color: "#1565c0",
-    fontSize: 13,
-    fontWeight: "600",
-    marginTop: 4,
-    textAlign: "center",
-  },
-  statusRejected: {
-    color: "#c62828",
-    fontSize: 12,
-    marginTop: 6,
-    textAlign: "center",
-    lineHeight: 18,
-  },
-  takeBtn: {
-    backgroundColor: "#2e7d32",
-    borderRadius: 12,
-    padding: 16,
-    alignItems: "center",
-    marginTop: 20,
-    marginBottom: 32,
-  },
+  takeBtn: { backgroundColor: "#2e7d32", borderRadius: 12, padding: 16, alignItems: "center", marginTop: 20 },
   takeBtnDisabled: { opacity: 0.7 },
   takeBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
-  takenBanner: {
-    backgroundColor: "#e8f5e9",
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 20,
-    marginBottom: 32,
-    alignItems: "center",
-  },
-  takenText: { color: "#2e7d32", fontWeight: "600" },
-  fullBanner: {
-    backgroundColor: "#f5f5f5",
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 20,
-    marginBottom: 32,
-    alignItems: "center",
-  },
+  // Progress bar
+  progressSection: { backgroundColor: "#fff", borderRadius: 12, padding: 14, marginTop: 16, borderWidth: 1, borderColor: "#e8f5e9" },
+  progressHeader: { flexDirection: "row", justifyContent: "space-between", marginBottom: 8 },
+  progressLabel: { fontSize: 13, fontWeight: "600", color: "#333" },
+  progressPct: { fontSize: 13, fontWeight: "700", color: "#2e7d32" },
+  progressBarBg: { height: 8, backgroundColor: "#e8f5e9", borderRadius: 4, overflow: "hidden", marginBottom: 10 },
+  progressBarFill: { height: "100%", backgroundColor: "#2e7d32", borderRadius: 4 },
+  progressSteps: { flexDirection: "row", justifyContent: "space-between" },
+  stepItem: { alignItems: "center", flex: 1 },
+  stepDot: { width: 22, height: 22, borderRadius: 11, backgroundColor: "#e0e0e0", alignItems: "center", justifyContent: "center", marginBottom: 4 },
+  stepDotDone: { backgroundColor: "#2e7d32" },
+  stepDotText: { fontSize: 10, color: "#fff" },
+  stepLabel: { fontSize: 10, color: "#999", textAlign: "center" },
+  stepLabelDone: { color: "#2e7d32", fontWeight: "600" },
+  // Photo cards
+  photoCard: { backgroundColor: "#fff", borderRadius: 12, padding: 14, marginTop: 14, borderWidth: 1, borderColor: "#e8f5e9" },
+  photoCardHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 },
+  photoBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  photoBadgeText: { fontSize: 10, fontWeight: "700" },
+  photoCardTitle: { fontSize: 14, fontWeight: "700", color: "#333" },
+  photoHint: { fontSize: 13, color: "#888", marginBottom: 10, lineHeight: 18 },
+  remarkInput: { borderWidth: 1, borderColor: "#ddd", borderRadius: 8, padding: 10, fontSize: 13, color: "#333", backgroundColor: "#fafafa", marginBottom: 10, textAlignVertical: "top" },
+  photoBtns: { flexDirection: "row", gap: 8 },
+  photoBtn: { flex: 1, backgroundColor: "#e65100", borderRadius: 8, paddingVertical: 11, alignItems: "center" },
+  photoBtnOutline: { flex: 1, borderRadius: 8, paddingVertical: 11, alignItems: "center", borderWidth: 1, borderColor: "#2e7d32" },
+  photoBtnText: { color: "#fff", fontWeight: "600", fontSize: 13 },
+  photoBtnOutlineText: { color: "#2e7d32", fontWeight: "600", fontSize: 13 },
+  photoBtnDisabled: { opacity: 0.5 },
+  proofImage: { width: "100%", height: 180, borderRadius: 10, marginBottom: 8, backgroundColor: "#f0f0f0" },
+  remarkDisplay: { backgroundColor: "#f9f9f9", borderRadius: 8, padding: 8, marginBottom: 6 },
+  remarkLabel: { fontSize: 11, color: "#888", marginBottom: 2 },
+  remarkText: { fontSize: 12, color: "#444", lineHeight: 18 },
+  uploadedBadge: { backgroundColor: "#e8f5e9", borderRadius: 8, padding: 8, alignItems: "center" },
+  uploadedText: { color: "#2e7d32", fontSize: 13, fontWeight: "600" },
+  locationLoading: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8, padding: 8, backgroundColor: "#fff8e1", borderRadius: 8 },
+  locationLoadingText: { fontSize: 12, color: "#e65100" },
+  // Completed
+  completedBanner: { backgroundColor: "#e8f5e9", borderRadius: 12, padding: 16, marginTop: 16, alignItems: "center" },
+  completedText: { color: "#2e7d32", fontWeight: "700", fontSize: 15, marginBottom: 12 },
+  completedPhotoRow: { width: "100%", marginBottom: 12 },
+  completedPhotoLabel: { fontSize: 12, color: "#666", fontWeight: "600", marginBottom: 4 },
+  completedPhoto: { width: "100%", height: 140, borderRadius: 8, backgroundColor: "#f0f0f0" },
+  completedRemark: { fontSize: 12, color: "#555", fontStyle: "italic", marginTop: 4 },
+  statusSubtext: { color: "#555", fontSize: 13, marginTop: 6, textAlign: "center" },
+  statusPaid: { color: "#1565c0", fontSize: 13, fontWeight: "600", marginTop: 4, textAlign: "center" },
+  statusRejected: { color: "#c62828", fontSize: 12, marginTop: 6, textAlign: "center", lineHeight: 18 },
+  fullBanner: { backgroundColor: "#f5f5f5", borderRadius: 12, padding: 16, marginTop: 20, alignItems: "center" },
   fullText: { color: "#888" },
 });
