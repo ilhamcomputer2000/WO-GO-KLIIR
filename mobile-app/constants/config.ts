@@ -1,8 +1,8 @@
 import { Platform } from "react-native";
 
 function getDefaultApiUrl() {
-  if (Platform.OS === "android") return "http://10.0.2.2:3000";
-  return "http://localhost:3000";
+  // Ganti dengan URL website Vercel Anda yang baru saja online
+  return "https://wo-go-kliir.vercel.app";
 }
 
 export const API_URL =

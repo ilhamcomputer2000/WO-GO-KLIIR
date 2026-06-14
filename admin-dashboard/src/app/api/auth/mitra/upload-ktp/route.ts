@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 import { NextResponse } from "next/server";
 import { mkdir, writeFile } from "fs/promises";
 import { randomUUID } from "crypto";

@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 import { NextResponse } from "next/server";
 import { updatePayoutStatus } from "@/lib/store";
 import type { PayoutStatus } from "@/types";

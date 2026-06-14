@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic';
 import { NextResponse } from "next/server";
 import { deleteMitra, getMitraById, updateMitraProfile, updateMitraStatus } from "@/lib/store";
 import type { MitraStatus } from "@/types";

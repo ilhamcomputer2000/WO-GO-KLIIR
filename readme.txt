@@ -12,3 +12,6 @@ password database supabase : swMDVbKpBWM51Siw
 
 cd /d d:\WO\admin-dashboard
 npx.cmd next dev --webpack
+
+cd /d d:\WO\admin-dashboard
+npx.cmd next dev --turbopack
