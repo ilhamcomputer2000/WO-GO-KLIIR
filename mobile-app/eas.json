@@ -1,0 +1,28 @@
+{
+  "cli": {
+    "version": ">= 10.0.0"
+  },
+  "build": {
+    "preview": {
+      "android": {
+        "buildType": "apk"
+      },
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://wo-go-kliir.vercel.app",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://etzombfwszgzpnwosizp.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV0em9tYmZ3c3pnenBud29zaXpwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODExODY5MDQsImV4cCI6MjA5Njc2MjkwNH0.W0H_sjCilI-O1HruBTL_WAHr33YcPciqXLjL2X9EJOo"
+      }
+    },
+    "production": {
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://wo-go-kliir.vercel.app",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://etzombfwszgzpnwosizp.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV0em9tYmZ3c3pnenBud29zaXpwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODExODY5MDQsImV4cCI6MjA5Njc2MjkwNH0.W0H_sjCilI-O1HruBTL_WAHr33YcPciqXLjL2X9EJOo"
+      }
+    }
+  }
+}

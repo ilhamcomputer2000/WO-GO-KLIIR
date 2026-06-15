@@ -11,11 +11,13 @@ import {
   ActivityIndicator,
   FlatList,
   RefreshControl,
+  Image,
 } from "react-native";
+import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useAuthStore } from "@/stores/auth-store";
-import { updateMitraProfile, changeMitraPassword } from "@/lib/api";
+import { updateMitraProfile, changeMitraPassword, uploadProfilePhoto } from "@/lib/api";
 import { API_URL } from "@/constants/config";
 import { formatDate } from "@/lib/utils";
 import { fetchMyWorkOrders } from "@/lib/api";
@@ -36,6 +38,7 @@ export default function AccountScreen() {
   const [myWorkOrders, setMyWorkOrders] = useState<WorkOrder[]>([]);
   const [woLoading, setWoLoading] = useState(false);
   const [woRefreshing, setWoRefreshing] = useState(false);
+  const [photoUploading, setPhotoUploading] = useState(false);
 
   // Fetch full mitra data when opening detail
   const openDetail = async () => {
@@ -60,6 +63,49 @@ export default function AccountScreen() {
     } finally {
       setWoLoading(false);
       setWoRefreshing(false);
+    }
+  };
+
+  // Upload foto profil
+  const handlePickProfilePhoto = async () => {
+    Alert.alert("Foto Profil", "Pilih sumber foto", [
+      {
+        text: "Ambil Foto",
+        onPress: () => pickProfilePhoto(true),
+      },
+      {
+        text: "Dari Galeri",
+        onPress: () => pickProfilePhoto(false),
+      },
+      { text: "Batal", style: "cancel" },
+    ]);
+  };
+
+  const pickProfilePhoto = async (useCamera: boolean) => {
+    const perm = useCamera
+      ? await ImagePicker.requestCameraPermissionsAsync()
+      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert("Izin diperlukan", "Izinkan akses kamera/galeri.");
+      return;
+    }
+    const result = useCamera
+      ? await ImagePicker.launchCameraAsync({ mediaTypes: ["images"], quality: 0.8, allowsEditing: true, aspect: [1, 1] })
+      : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.8, allowsEditing: true, aspect: [1, 1] });
+    if (result.canceled || !result.assets[0]) return;
+
+    if (!mitra) return;
+    setPhotoUploading(true);
+    try {
+      const asset = result.assets[0];
+      const mimeType = asset.mimeType ?? "image/jpeg";
+      const res = await uploadProfilePhoto(mitra.id, asset.uri, mimeType);
+      updateMitraStore(res.mitra);
+      Alert.alert("Berhasil", "Foto profil berhasil diperbarui");
+    } catch (e) {
+      Alert.alert("Gagal", e instanceof Error ? e.message : "Gagal upload foto profil");
+    } finally {
+      setPhotoUploading(false);
     }
   };
 
@@ -304,9 +350,27 @@ export default function AccountScreen() {
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
       {/* Hero */}
       <View style={styles.hero}>
-        <View style={styles.avatarWrap}>
-          <Text style={styles.avatarInitial}>{mitra.name.charAt(0).toUpperCase()}</Text>
-        </View>
+        <TouchableOpacity
+          style={styles.avatarWrap}
+          onPress={handlePickProfilePhoto}
+          activeOpacity={0.85}
+          disabled={photoUploading}
+        >
+          {photoUploading ? (
+            <ActivityIndicator color="#fff" size="large" />
+          ) : (mitra as unknown as Record<string, string>).profilePhotoUrl ? (
+            <Image
+              source={{ uri: (mitra as unknown as Record<string, string>).profilePhotoUrl }}
+              style={styles.avatarImage}
+            />
+          ) : (
+            <Text style={styles.avatarInitial}>{mitra.name.charAt(0).toUpperCase()}</Text>
+          )}
+          {/* Camera badge */}
+          <View style={styles.cameraBadge}>
+            <Ionicons name="camera" size={12} color="#fff" />
+          </View>
+        </TouchableOpacity>
         <Text style={styles.heroName}>{mitra.name}</Text>
         <View style={[styles.statusPill, { backgroundColor: statusColor(mitra.status) + "18" }]}>
           <View style={[styles.statusDot, { backgroundColor: statusColor(mitra.status) }]} />
@@ -447,7 +511,25 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     elevation: 6,
   },
+  avatarImage: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+  },
   avatarInitial: { fontSize: 36, fontWeight: "800", color: "#fff" },
+  cameraBadge: {
+    position: "absolute",
+    bottom: 0,
+    right: 0,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: "#1b5e20",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "#fff",
+  },
   heroName: { fontSize: 19, fontWeight: "700", color: "#111", letterSpacing: 0.2 },
   statusPill: {
     flexDirection: "row",

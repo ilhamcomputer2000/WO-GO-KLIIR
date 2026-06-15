@@ -30,10 +30,22 @@ async function request<T>(
       },
     });
 
-    const data = await res.json();
+    // Guard against empty / non-JSON response (e.g. Vercel 500 with no body)
+    const text = await res.text();
+    if (!text) {
+      throw new Error(`Server error (${res.status}) — tidak ada respons`);
+    }
+    let data: unknown;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(`Respons tidak valid dari server (${res.status})`);
+    }
 
     if (!res.ok) {
-      throw new Error(data.error ?? "Terjadi kesalahan");
+      throw new Error(
+        (data as Record<string, unknown>).error as string ?? "Terjadi kesalahan"
+      );
     }
 
     return data as T;
@@ -63,19 +75,11 @@ export async function uploadKtpImage(
   imageUri: string,
   mimeType = "image/jpeg"
 ): Promise<string> {
-  // Convert to base64 then upload to backend
-  const base64 = await new Promise<string>((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.onload = () => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve((reader.result as string).split(",")[1]);
-      reader.onerror = reject;
-      reader.readAsDataURL(xhr.response);
-    };
-    xhr.onerror = reject;
-    xhr.responseType = "blob";
-    xhr.open("GET", imageUri);
-    xhr.send();
+  // Use expo-file-system to read as base64 (works reliably on Android & iOS)
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const FileSystem = require("expo-file-system");
+  const base64 = await FileSystem.readAsStringAsync(imageUri, {
+    encoding: FileSystem.EncodingType.Base64,
   });
 
   const res = await fetch(`${API_URL}/api/auth/mitra/upload-ktp`, {
@@ -83,8 +87,17 @@ export async function uploadKtpImage(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ base64, mimeType }),
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error ?? "Upload KTP gagal");
+
+  // Guard: handle empty / non-JSON response
+  const text = await res.text();
+  if (!text) throw new Error("Server tidak merespons saat upload KTP");
+  let data: Record<string, unknown>;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error(`Upload KTP gagal: respons tidak valid (${res.status})`);
+  }
+  if (!res.ok) throw new Error((data.error as string) ?? "Upload KTP gagal");
   return data.url as string;
 }
 
@@ -164,22 +177,11 @@ export async function uploadProof(
   proofType: "before" | "after" = "after",
   remark?: string
 ) {
-  // Read file as base64 using XMLHttpRequest (works reliably in React Native)
-  const base64 = await new Promise<string>((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.onload = () => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const result = reader.result as string;
-        resolve(result.split(",")[1]);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(xhr.response);
-    };
-    xhr.onerror = reject;
-    xhr.responseType = "blob";
-    xhr.open("GET", imageUri);
-    xhr.send();
+  // Use expo-file-system to read as base64 (reliable on Android & iOS)
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const FileSystem = require("expo-file-system");
+  const base64 = await FileSystem.readAsStringAsync(imageUri, {
+    encoding: FileSystem.EncodingType.Base64,
   });
 
   return request<{
@@ -220,6 +222,35 @@ export async function changeMitraPassword(
     method: "POST",
     body: JSON.stringify({ currentPassword, newPassword }),
   });
+}
+
+export async function uploadProfilePhoto(
+  mitraId: string,
+  imageUri: string,
+  mimeType = "image/jpeg"
+): Promise<{ profilePhotoUrl: string; mitra: Mitra }> {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const FileSystem = require("expo-file-system");
+  const base64 = await FileSystem.readAsStringAsync(imageUri, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
+
+  const res = await fetch(`${API_URL}/api/mitra/${mitraId}/photo`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ base64, mimeType }),
+  });
+
+  const text = await res.text();
+  if (!text) throw new Error("Server tidak merespons saat upload foto profil");
+  let data: Record<string, unknown>;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error(`Upload foto profil gagal: respons tidak valid (${res.status})`);
+  }
+  if (!res.ok) throw new Error((data.error as string) ?? "Upload foto profil gagal");
+  return { profilePhotoUrl: data.profilePhotoUrl as string, mitra: data.mitra as Mitra };
 }
 
 export function getPayoutStatusLabel(status: PayoutRecord["status"]): string {

@@ -17,7 +17,8 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.ilhamsyah13.mobileapp"
     },
     "web": {
       "bundler": "metro",
@@ -26,6 +27,13 @@
     },
     "plugins": [
       "expo-router",
+      "expo-image-picker",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Izinkan GO KLIRR mengakses lokasi untuk stamp foto bukti pekerjaan."
+        }
+      ],
       [
         "expo-splash-screen",
         {
@@ -37,6 +45,12 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "c8598c25-400d-410d-8c14-6c09888c800e"
+      }
     }
   }
 }
