@@ -291,6 +291,18 @@ export default function MitraPage() {
           </DialogHeader>
           {selectedMitra && (
             <div className="space-y-3 text-sm overflow-y-auto max-h-[60vh]">
+              {/* Foto Profil */}
+              {(selectedMitra as unknown as Record<string,string>).profilePhotoUrl && (
+                <div className="flex flex-col items-center pb-2">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={(selectedMitra as unknown as Record<string,string>).profilePhotoUrl}
+                    alt="Foto Profil"
+                    className="w-20 h-20 rounded-full object-cover border-2 border-green-200 shadow"
+                  />
+                  <span className="text-xs text-muted-foreground mt-1">Foto Profil</span>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-y-2 gap-x-4">
                 <span className="text-muted-foreground">ID</span>
                 <span className="font-mono text-xs">{selectedMitra.id}</span>

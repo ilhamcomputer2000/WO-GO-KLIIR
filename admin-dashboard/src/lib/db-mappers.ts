@@ -31,6 +31,7 @@ export function mapMitraRow(row: Record<string, unknown>): Mitra {
   if (row.bank_name) extended.bankName = row.bank_name;
   if (row.bank_account_number) extended.bankAccountNumber = row.bank_account_number;
   if (row.bank_account_name) extended.bankAccountName = row.bank_account_name;
+  if (row.profile_photo_url) extended.profilePhotoUrl = row.profile_photo_url;
 
   return mitra;
 }

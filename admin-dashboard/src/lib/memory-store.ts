@@ -103,6 +103,21 @@ export async function memoryGetMitraById(id: string) {
   return getStore().mitra.find((m) => m.id === id);
 }
 
+export async function memoryUpdateMitraPhoto(
+  id: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _file: Buffer,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _mimeType: string
+) {
+  const mitra = getStore().mitra.find((m) => m.id === id);
+  if (!mitra) return { success: false as const, error: "Mitra tidak ditemukan" };
+  // In memory mode, we can't store files — return a placeholder
+  const profilePhotoUrl = `/uploads/profiles/${id}.jpg`;
+  (mitra as unknown as Record<string, unknown>).profilePhotoUrl = profilePhotoUrl;
+  return { success: true as const, profilePhotoUrl, mitra };
+}
+
 export async function memoryUpdateMitraProfile(
   id: string,
   data: { name?: string; phone?: string; address?: string }

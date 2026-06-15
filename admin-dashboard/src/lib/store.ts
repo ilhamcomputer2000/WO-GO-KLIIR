@@ -32,6 +32,12 @@ export async function updateMitraProfile(
     : memory.memoryUpdateMitraProfile(id, data);
 }
 
+export async function updateMitraPhoto(id: string, file: Buffer, mimeType: string) {
+  return useDb()
+    ? supabase.supabaseUpdateMitraPhoto(id, file, mimeType)
+    : memory.memoryUpdateMitraPhoto(id, file, mimeType);
+}
+
 export async function changeMitraPassword(
   id: string,
   currentPassword: string,

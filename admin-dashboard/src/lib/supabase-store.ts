@@ -166,11 +166,32 @@ export async function supabaseGetMitraById(id: string) {
   return data ? mapMitraRow(data) : undefined;
 }
 
+export async function supabaseUpdateMitraPhoto(id: string, file: Buffer, mimeType: string) {
+  const ext = mimeType.includes("png") ? "png" : "jpg";
+  const storagePath = `${id}/profile-${randomUUID()}.${ext}`;
+
+  const { error: uploadError } = await db()
+    .storage.from("mitra-photos")
+    .upload(storagePath, file, { contentType: mimeType, upsert: true });
+  if (uploadError) return { success: false as const, error: uploadError.message };
+
+  const { data: urlData } = db().storage.from("mitra-photos").getPublicUrl(storagePath);
+  const profilePhotoUrl = urlData.publicUrl;
+
+  const { data: row, error } = await db()
+    .from("mitra")
+    .update({ profile_photo_url: profilePhotoUrl })
+    .eq("id", id)
+    .select()
+    .single();
+  if (error || !row) return { success: false as const, error: "Mitra tidak ditemukan" };
+  return { success: true as const, profilePhotoUrl, mitra: mapMitraRow(row) };
+}
+
 export async function supabaseUpdateMitraProfile(
   id: string,
   data: { name?: string; phone?: string; address?: string }
-) {
-  const updates: Record<string, unknown> = {};
+) {  const updates: Record<string, unknown> = {};
   if (data.name) updates.name = data.name;
   if (data.phone !== undefined) updates.phone = data.phone;
   if (data.address !== undefined) updates.address = data.address;

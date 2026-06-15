@@ -116,6 +116,10 @@ alter table mitra
   add column if not exists bank_account_number text,
   add column if not exists bank_account_name text;
 
+-- Migration: tambah kolom foto profil ke tabel mitra
+alter table mitra
+  add column if not exists profile_photo_url text;
+
 -- ============================================================
 -- Tabel Notifications — untuk notifikasi realtime
 -- ============================================================
