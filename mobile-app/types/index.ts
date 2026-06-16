@@ -37,6 +37,8 @@ export interface WorkOrderSlot {
   afterRemark?: string;
   verificationStatus?: SlotVerificationStatus;
   verifiedAt?: string;
+  rejectedPhotoTypes?: ("before" | "after")[];
+  rejectionReason?: string;
 }
 
 export interface PayoutRecord {

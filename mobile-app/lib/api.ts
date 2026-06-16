@@ -1,3 +1,4 @@
+import * as FileSystem from "expo-file-system/legacy";
 import { API_URL } from "@/constants/config";
 import type { CompletionProof, Mitra, PayoutRecord, WorkOrder } from "@/types";
 
@@ -75,9 +76,6 @@ export async function uploadKtpImage(
   imageUri: string,
   mimeType = "image/jpeg"
 ): Promise<string> {
-  // Use expo-file-system to read as base64 (works reliably on Android & iOS)
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const FileSystem = require("expo-file-system");
   const base64 = await FileSystem.readAsStringAsync(imageUri, {
     encoding: FileSystem.EncodingType.Base64,
   });
@@ -177,9 +175,6 @@ export async function uploadProof(
   proofType: "before" | "after" = "after",
   remark?: string
 ) {
-  // Use expo-file-system to read as base64 (reliable on Android & iOS)
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const FileSystem = require("expo-file-system");
   const base64 = await FileSystem.readAsStringAsync(imageUri, {
     encoding: FileSystem.EncodingType.Base64,
   });
@@ -229,8 +224,6 @@ export async function uploadProfilePhoto(
   imageUri: string,
   mimeType = "image/jpeg"
 ): Promise<{ profilePhotoUrl: string; mitra: Mitra }> {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const FileSystem = require("expo-file-system");
   const base64 = await FileSystem.readAsStringAsync(imageUri, {
     encoding: FileSystem.EncodingType.Base64,
   });

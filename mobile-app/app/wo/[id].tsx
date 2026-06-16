@@ -96,33 +96,17 @@ export default function WorkOrderDetailScreen() {
     }
 
     const result = useCamera
-      ? await ImagePicker.launchCameraAsync({
-          mediaTypes: ["images"],
-          quality: 0.8,
-          allowsEditing: true,
-        })
-      : await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ["images"],
-          quality: 0.8,
-          allowsEditing: true,
-        });
+      ? await ImagePicker.launchCameraAsync({ mediaTypes: ["images"], quality: 0.8, allowsEditing: true })
+      : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.8, allowsEditing: true });
 
     if (result.canceled || !result.assets[0]) return;
 
     const manualRemark = proofType === "before" ? beforeRemark : afterRemark;
     const fullRemark = manualRemark.trim() || undefined;
-
     const asset = result.assets[0];
     setUploading(proofType);
     try {
-      const res = await uploadProof(
-        wo.id,
-        mitra.id,
-        asset.uri,
-        asset.mimeType ?? "image/jpeg",
-        proofType,
-        fullRemark
-      );
+      const res = await uploadProof(wo.id, mitra.id, asset.uri, asset.mimeType ?? "image/jpeg", proofType, fullRemark);
       setWo(res.workOrder);
       if (proofType === "before") setBeforeRemark("");
       else setAfterRemark("");
@@ -141,7 +125,6 @@ export default function WorkOrderDetailScreen() {
 
   const handleTakeSlot = async () => {
     if (!mitra || !wo) return;
-
     Alert.alert(
       "Ambil Slot CSO",
       `Ambil 1 slot untuk pekerjaan ini?\nKomisi: ${formatCurrency(getCommissionPerCso(wo))}`,
@@ -182,6 +165,20 @@ export default function WorkOrderDetailScreen() {
   const mySlot = wo.slots.find((s) => s.mitraId === mitra?.id);
   const canTake = !mySlot && openSlots > 0;
   const progress = mySlot?.progress ?? 0;
+
+  // Determine which photos are rejected (partial reject support)
+  const rejectedPhotos = mySlot?.rejectedPhotoTypes ?? [];
+  const isBeforeRejected = rejectedPhotos.includes("before");
+  const isAfterRejected = rejectedPhotos.includes("after");
+  const hasAnyRejection = mySlot?.verificationStatus === "rejected";
+
+  // A photo slot needs upload if: it's rejected OR it was never uploaded
+  const needsBeforeUpload = hasAnyRejection
+    ? isBeforeRejected
+    : !mySlot?.beforePhotoUrl;
+  const needsAfterUpload = hasAnyRejection
+    ? isAfterRejected
+    : !mySlot?.afterPhotoUrl;
 
   return (
     <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
@@ -229,7 +226,7 @@ export default function WorkOrderDetailScreen() {
         </TouchableOpacity>
       )}
 
-      {/* Progress bar (read-only, sistem) */}
+      {/* Progress bar */}
       {mySlot && (
         <View style={styles.progressSection}>
           <View style={styles.progressHeader}>
@@ -247,23 +244,44 @@ export default function WorkOrderDetailScreen() {
         </View>
       )}
 
-      {/* Foto SEBELUM */}
+      {/* ── Rejection notice banner ── */}
+      {hasAnyRejection && mySlot && (
+        <View style={styles.rejectionBanner}>
+          <Text style={styles.rejectionTitle}>⚠️ Foto Ditolak Admin</Text>
+          {mySlot.rejectionReason ? (
+            <Text style={styles.rejectionReason}>Alasan: {mySlot.rejectionReason}</Text>
+          ) : null}
+          <View style={styles.rejectionTags}>
+            {isBeforeRejected && (
+              <View style={styles.rejectionTag}>
+                <Text style={styles.rejectionTagText}>📷 Foto Sebelum perlu diupload ulang</Text>
+              </View>
+            )}
+            {isAfterRejected && (
+              <View style={styles.rejectionTag}>
+                <Text style={styles.rejectionTagText}>✅ Foto Setelah perlu diupload ulang</Text>
+              </View>
+            )}
+          </View>
+        </View>
+      )}
+
+      {/* ── Foto SEBELUM ── */}
       {mySlot && mySlot.status !== "completed" && (
         <View style={styles.photoCard}>
           <View style={styles.photoCardHeader}>
-            <View style={[styles.photoBadge, { backgroundColor: "#fff3e0" }]}>
-              <Text style={[styles.photoBadgeText, { color: "#e65100" }]}>SEBELUM</Text>
+            <View style={[styles.photoBadge, { backgroundColor: isBeforeRejected ? "#ffebee" : "#fff3e0" }]}>
+              <Text style={[styles.photoBadgeText, { color: isBeforeRejected ? "#c62828" : "#e65100" }]}>
+                {isBeforeRejected ? "✗ SEBELUM" : "SEBELUM"}
+              </Text>
             </View>
             <Text style={styles.photoCardTitle}>Foto Sebelum Mulai</Text>
           </View>
 
-          {mySlot.beforePhotoUrl ? (
+          {/* Show existing photo if not rejected */}
+          {mySlot.beforePhotoUrl && !isBeforeRejected ? (
             <>
-              <Image
-                source={{ uri: resolveImageUrl(mySlot.beforePhotoUrl) }}
-                style={styles.proofImage}
-                resizeMode="cover"
-              />
+              <Image source={{ uri: resolveImageUrl(mySlot.beforePhotoUrl) }} style={styles.proofImage} resizeMode="cover" />
               {mySlot.beforeRemark ? (
                 <View style={styles.remarkDisplay}>
                   <Text style={styles.remarkLabel}>Catatan:</Text>
@@ -274,11 +292,16 @@ export default function WorkOrderDetailScreen() {
                 <Text style={styles.uploadedText}>✓ Foto sebelum sudah diunggah</Text>
               </View>
             </>
-          ) : (
+          ) : needsBeforeUpload ? (
             <>
-              <Text style={styles.photoHint}>
-                Ambil foto kondisi area/peralatan sebelum mulai pekerjaan
-              </Text>
+              {isBeforeRejected && (
+                <View style={styles.rejectedPhotoBanner}>
+                  <Text style={styles.rejectedPhotoText}>Foto ini ditolak — upload foto baru yang benar</Text>
+                </View>
+              )}
+              {!isBeforeRejected && (
+                <Text style={styles.photoHint}>Ambil foto kondisi area/peralatan sebelum mulai pekerjaan</Text>
+              )}
               <TextInput
                 style={styles.remarkInput}
                 placeholder="Catatan sebelum mulai (opsional)..."
@@ -290,7 +313,7 @@ export default function WorkOrderDetailScreen() {
               />
               <View style={styles.photoBtns}>
                 <TouchableOpacity
-                  style={[styles.photoBtn, uploading === "before" && styles.photoBtnDisabled]}
+                  style={[styles.photoBtn, { backgroundColor: isBeforeRejected ? "#c62828" : "#e65100" }, uploading === "before" && styles.photoBtnDisabled]}
                   onPress={() => pickAndUpload("before", true)}
                   disabled={uploading !== null || fetchingLocation}
                 >
@@ -304,37 +327,27 @@ export default function WorkOrderDetailScreen() {
                   <Text style={styles.photoBtnOutlineText}>🖼 Dari Galeri</Text>
                 </TouchableOpacity>
               </View>
-              {fetchingLocation && (
-                <View style={styles.locationLoading}>
-                  <ActivityIndicator size="small" color="#e65100" />
-                  <Text style={styles.locationLoadingText}>Mengambil lokasi GPS...</Text>
-                </View>
-              )}
-              {uploading === "before" && (
-                <ActivityIndicator color="#e65100" style={{ marginTop: 8 }} />
-              )}
+              {uploading === "before" && <ActivityIndicator color="#e65100" style={{ marginTop: 8 }} />}
             </>
-          )}
+          ) : null}
         </View>
       )}
 
-      {/* Foto SETELAH — hanya muncul setelah foto before ada */}
-      {mySlot && mySlot.status !== "completed" && mySlot.beforePhotoUrl && (
+      {/* ── Foto SETELAH — muncul jika before sudah ada atau hanya after yang direject ── */}
+      {mySlot && mySlot.status !== "completed" && (mySlot.beforePhotoUrl || isAfterRejected) && (
         <View style={styles.photoCard}>
           <View style={styles.photoCardHeader}>
-            <View style={[styles.photoBadge, { backgroundColor: "#e8f5e9" }]}>
-              <Text style={[styles.photoBadgeText, { color: "#2e7d32" }]}>SETELAH</Text>
+            <View style={[styles.photoBadge, { backgroundColor: isAfterRejected ? "#ffebee" : "#e8f5e9" }]}>
+              <Text style={[styles.photoBadgeText, { color: isAfterRejected ? "#c62828" : "#2e7d32" }]}>
+                {isAfterRejected ? "✗ SETELAH" : "SETELAH"}
+              </Text>
             </View>
             <Text style={styles.photoCardTitle}>Foto Setelah Selesai</Text>
           </View>
 
-          {mySlot.afterPhotoUrl ? (
+          {mySlot.afterPhotoUrl && !isAfterRejected ? (
             <>
-              <Image
-                source={{ uri: resolveImageUrl(mySlot.afterPhotoUrl) }}
-                style={styles.proofImage}
-                resizeMode="cover"
-              />
+              <Image source={{ uri: resolveImageUrl(mySlot.afterPhotoUrl) }} style={styles.proofImage} resizeMode="cover" />
               {mySlot.afterRemark ? (
                 <View style={styles.remarkDisplay}>
                   <Text style={styles.remarkLabel}>Catatan:</Text>
@@ -342,11 +355,16 @@ export default function WorkOrderDetailScreen() {
                 </View>
               ) : null}
             </>
-          ) : (
+          ) : needsAfterUpload ? (
             <>
-              <Text style={styles.photoHint}>
-                Ambil foto kondisi area/hasil pekerjaan setelah selesai
-              </Text>
+              {isAfterRejected && (
+                <View style={styles.rejectedPhotoBanner}>
+                  <Text style={styles.rejectedPhotoText}>Foto ini ditolak — upload foto baru yang benar</Text>
+                </View>
+              )}
+              {!isAfterRejected && (
+                <Text style={styles.photoHint}>Ambil foto kondisi area/hasil pekerjaan setelah selesai</Text>
+              )}
               <TextInput
                 style={styles.remarkInput}
                 placeholder="Catatan setelah selesai (opsional)..."
@@ -358,7 +376,7 @@ export default function WorkOrderDetailScreen() {
               />
               <View style={styles.photoBtns}>
                 <TouchableOpacity
-                  style={[styles.photoBtn, { backgroundColor: "#2e7d32" }, uploading === "after" && styles.photoBtnDisabled]}
+                  style={[styles.photoBtn, { backgroundColor: isAfterRejected ? "#c62828" : "#2e7d32" }, uploading === "after" && styles.photoBtnDisabled]}
                   onPress={() => pickAndUpload("after", true)}
                   disabled={uploading !== null || fetchingLocation}
                 >
@@ -372,26 +390,16 @@ export default function WorkOrderDetailScreen() {
                   <Text style={styles.photoBtnOutlineText}>🖼 Dari Galeri</Text>
                 </TouchableOpacity>
               </View>
-              {fetchingLocation && (
-                <View style={styles.locationLoading}>
-                  <ActivityIndicator size="small" color="#2e7d32" />
-                  <Text style={styles.locationLoadingText}>Mengambil lokasi GPS...</Text>
-                </View>
-              )}
-              {uploading === "after" && (
-                <ActivityIndicator color="#2e7d32" style={{ marginTop: 8 }} />
-              )}
+              {uploading === "after" && <ActivityIndicator color="#2e7d32" style={{ marginTop: 8 }} />}
             </>
-          )}
+          ) : null}
         </View>
       )}
 
-      {/* Completed banner */}
+      {/* ── Completed banner ── */}
       {mySlot?.status === "completed" && (
         <View style={styles.completedBanner}>
           <Text style={styles.completedText}>Pekerjaan selesai — Slot {mySlot.slotNumber} ✓</Text>
-
-          {/* Show both photos */}
           {mySlot.beforePhotoUrl && (
             <View style={styles.completedPhotoRow}>
               <Text style={styles.completedPhotoLabel}>Foto Sebelum:</Text>
@@ -406,18 +414,12 @@ export default function WorkOrderDetailScreen() {
               {mySlot.afterRemark ? <Text style={styles.completedRemark}>"{mySlot.afterRemark}"</Text> : null}
             </View>
           )}
-
           <Text style={styles.statusSubtext}>{getVerificationLabel(mySlot.verificationStatus)}</Text>
           {myPayout && (
             <Text style={styles.statusSubtext}>Komisi: {getPayoutStatusLabel(myPayout.status)}</Text>
           )}
           {myPayout?.status === "paid" && (
             <Text style={styles.statusPaid}>Bukti transfer sudah diunggah admin ✓</Text>
-          )}
-          {mySlot.verificationStatus === "rejected" && (
-            <Text style={styles.statusRejected}>
-              Pekerjaan ditolak admin. Harap perbaiki dan upload foto ulang.
-            </Text>
           )}
         </View>
       )}
@@ -473,7 +475,6 @@ const styles = StyleSheet.create({
   takeBtn: { backgroundColor: "#2e7d32", borderRadius: 12, padding: 16, alignItems: "center", marginTop: 20 },
   takeBtnDisabled: { opacity: 0.7 },
   takeBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
-  // Progress bar
   progressSection: { backgroundColor: "#fff", borderRadius: 12, padding: 14, marginTop: 16, borderWidth: 1, borderColor: "#e8f5e9" },
   progressHeader: { flexDirection: "row", justifyContent: "space-between", marginBottom: 8 },
   progressLabel: { fontSize: 13, fontWeight: "600", color: "#333" },
@@ -487,6 +488,16 @@ const styles = StyleSheet.create({
   stepDotText: { fontSize: 10, color: "#fff" },
   stepLabel: { fontSize: 10, color: "#999", textAlign: "center" },
   stepLabelDone: { color: "#2e7d32", fontWeight: "600" },
+  // Rejection banner
+  rejectionBanner: { backgroundColor: "#ffebee", borderRadius: 12, padding: 14, marginTop: 14, borderWidth: 1, borderColor: "#ef9a9a" },
+  rejectionTitle: { fontSize: 14, fontWeight: "700", color: "#c62828", marginBottom: 4 },
+  rejectionReason: { fontSize: 12, color: "#b71c1c", marginBottom: 8, lineHeight: 18 },
+  rejectionTags: { gap: 6 },
+  rejectionTag: { backgroundColor: "#fff", borderRadius: 6, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: "#ef9a9a" },
+  rejectionTagText: { fontSize: 12, color: "#c62828", fontWeight: "600" },
+  // Rejected photo within card
+  rejectedPhotoBanner: { backgroundColor: "#ffebee", borderRadius: 8, padding: 10, marginBottom: 10 },
+  rejectedPhotoText: { fontSize: 12, color: "#c62828", fontWeight: "600", textAlign: "center" },
   // Photo cards
   photoCard: { backgroundColor: "#fff", borderRadius: 12, padding: 14, marginTop: 14, borderWidth: 1, borderColor: "#e8f5e9" },
   photoCardHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 },
@@ -496,7 +507,7 @@ const styles = StyleSheet.create({
   photoHint: { fontSize: 13, color: "#888", marginBottom: 10, lineHeight: 18 },
   remarkInput: { borderWidth: 1, borderColor: "#ddd", borderRadius: 8, padding: 10, fontSize: 13, color: "#333", backgroundColor: "#fafafa", marginBottom: 10, textAlignVertical: "top" },
   photoBtns: { flexDirection: "row", gap: 8 },
-  photoBtn: { flex: 1, backgroundColor: "#e65100", borderRadius: 8, paddingVertical: 11, alignItems: "center" },
+  photoBtn: { flex: 1, borderRadius: 8, paddingVertical: 11, alignItems: "center" },
   photoBtnOutline: { flex: 1, borderRadius: 8, paddingVertical: 11, alignItems: "center", borderWidth: 1, borderColor: "#2e7d32" },
   photoBtnText: { color: "#fff", fontWeight: "600", fontSize: 13 },
   photoBtnOutlineText: { color: "#2e7d32", fontWeight: "600", fontSize: 13 },
@@ -518,7 +529,6 @@ const styles = StyleSheet.create({
   completedRemark: { fontSize: 12, color: "#555", fontStyle: "italic", marginTop: 4 },
   statusSubtext: { color: "#555", fontSize: 13, marginTop: 6, textAlign: "center" },
   statusPaid: { color: "#1565c0", fontSize: 13, fontWeight: "600", marginTop: 4, textAlign: "center" },
-  statusRejected: { color: "#c62828", fontSize: 12, marginTop: 6, textAlign: "center", lineHeight: 18 },
   fullBanner: { backgroundColor: "#f5f5f5", borderRadius: 12, padding: 16, marginTop: 20, alignItems: "center" },
   fullText: { color: "#888" },
 });
