@@ -214,14 +214,26 @@ export default function BuktiWoPage() {
       />
       <div className="flex flex-1 flex-col gap-6 p-4 md:p-6 overflow-auto">
 
-        {/* Info algoritma reject */}
-        <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 flex items-start gap-2">
-          <Info className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
-          <p className="text-xs text-blue-800">
-            <strong>Alur reject:</strong> Saat foto ditolak, slot WO tetap milik mitra —
-            status kembali ke "sedang dikerjakan" dan mitra bisa upload foto ulang yang benar.
-            WO tidak hilang dari akun mitra.
-          </p>
+        {/* Auto-refresh indicator */}
+        <div className="flex items-center justify-between">
+          <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 flex items-start gap-2 flex-1 mr-3">
+            <Info className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
+            <p className="text-xs text-blue-800">
+              <strong>Alur reject:</strong> Saat foto ditolak, slot WO tetap milik mitra —
+              status kembali ke "sedang dikerjakan" dan mitra bisa upload foto ulang yang benar.
+              WO tidak hilang dari akun mitra.
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => sync()}
+            disabled={isSyncing}
+            className="shrink-0 gap-2"
+          >
+            <RefreshCw className={`h-4 w-4 ${isSyncing ? "animate-spin" : ""}`} />
+            {isSyncing ? "Memuat..." : "Refresh"}
+          </Button>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-3">
