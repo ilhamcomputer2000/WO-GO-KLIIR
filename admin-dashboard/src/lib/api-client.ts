@@ -35,6 +35,16 @@ export async function apiUpdateMitraStatus(id: string, status: MitraStatus) {
   });
 }
 
+export async function apiUpdateMitraProfile(
+  id: string,
+  data: Record<string, string | undefined>
+) {
+  return request<{ mitra: Mitra }>(`/api/mitra/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
 export async function apiDeleteMitra(id: string) {
   return request<{ message: string }>(`/api/mitra/${id}`, { method: "DELETE" });
 }

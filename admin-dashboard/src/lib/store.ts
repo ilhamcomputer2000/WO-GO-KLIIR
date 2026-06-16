@@ -25,7 +25,21 @@ export async function getMitraById(id: string) {
 
 export async function updateMitraProfile(
   id: string,
-  data: { name?: string; phone?: string; address?: string }
+  data: {
+    name?: string;
+    phone?: string;
+    address?: string;
+    email?: string;
+    nik?: string;
+    religion?: string;
+    birthPlace?: string;
+    birthDate?: string;
+    maritalStatus?: string;
+    gender?: string;
+    bankName?: string;
+    bankAccountNumber?: string;
+    bankAccountName?: string;
+  }
 ) {
   return useDb()
     ? supabase.supabaseUpdateMitraProfile(id, data)

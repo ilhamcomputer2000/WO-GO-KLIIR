@@ -30,17 +30,28 @@ export async function PATCH(
     return NextResponse.json({ mitra: result.mitra });
   }
 
-  // Update profile (mitra)
-  const { name, phone, address } = body as {
-    name?: string;
-    phone?: string;
-    address?: string;
-  };
+  // Update profile (admin or mitra)
+  const {
+    name, phone, address, email, nik, religion,
+    birthPlace, birthDate, maritalStatus, gender,
+    bankName, bankAccountNumber, bankAccountName,
+  } = body as Record<string, string | undefined>;
 
-  if (!name && !phone && address === undefined)
+  const hasUpdate = name || phone !== undefined || address !== undefined ||
+    email || nik !== undefined || religion !== undefined ||
+    birthPlace !== undefined || birthDate !== undefined ||
+    maritalStatus !== undefined || gender !== undefined ||
+    bankName !== undefined || bankAccountNumber !== undefined ||
+    bankAccountName !== undefined;
+
+  if (!hasUpdate)
     return NextResponse.json({ error: "Tidak ada data yang diupdate" }, { status: 400 });
 
-  const result = await updateMitraProfile(id, { name, phone, address });
+  const result = await updateMitraProfile(id, {
+    name, phone, address, email, nik, religion,
+    birthPlace, birthDate, maritalStatus, gender,
+    bankName, bankAccountNumber, bankAccountName,
+  });
   if (!result.success)
     return NextResponse.json({ error: result.error }, { status: 404 });
   return NextResponse.json({ mitra: result.mitra });

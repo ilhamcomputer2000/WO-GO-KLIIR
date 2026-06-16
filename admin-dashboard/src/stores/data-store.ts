@@ -16,6 +16,7 @@ import {
   apiAddWorkOrdersBatch,
   apiDeleteMitra,
   apiDeleteWorkOrder,
+  apiUpdateMitraProfile,
   apiUpdateMitraStatus,
   apiUpdatePayoutStatus,
   apiUploadTransferProof,
@@ -34,6 +35,7 @@ interface DataState {
   dataSource: "supabase" | "memory" | null;
   sync: () => Promise<void>;
   updateMitraStatus: (id: string, status: MitraStatus) => Promise<void>;
+  updateMitraProfile: (id: string, data: Record<string, string | undefined>) => Promise<void>;
   deleteMitra: (id: string) => Promise<void>;
   addWorkOrder: (
     wo: Omit<WorkOrder, "id" | "createdAt" | "progress">
@@ -114,6 +116,11 @@ export const useDataStore = create<DataState>()((set, get) => ({
 
   updateMitraStatus: async (id, status) => {
     await apiUpdateMitraStatus(id, status);
+    await get().sync();
+  },
+
+  updateMitraProfile: async (id, data) => {
+    await apiUpdateMitraProfile(id, data);
     await get().sync();
   },
 

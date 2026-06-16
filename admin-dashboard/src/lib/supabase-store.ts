@@ -199,11 +199,36 @@ export async function supabaseUpdateMitraPhoto(id: string, file: Buffer, mimeTyp
 
 export async function supabaseUpdateMitraProfile(
   id: string,
-  data: { name?: string; phone?: string; address?: string }
-) {  const updates: Record<string, unknown> = {};
+  data: {
+    name?: string;
+    phone?: string;
+    address?: string;
+    email?: string;
+    nik?: string;
+    religion?: string;
+    birthPlace?: string;
+    birthDate?: string;
+    maritalStatus?: string;
+    gender?: string;
+    bankName?: string;
+    bankAccountNumber?: string;
+    bankAccountName?: string;
+  }
+) {
+  const updates: Record<string, unknown> = {};
   if (data.name) updates.name = data.name;
   if (data.phone !== undefined) updates.phone = data.phone;
   if (data.address !== undefined) updates.address = data.address;
+  if (data.email) updates.email = data.email;
+  if (data.nik !== undefined) updates.nik = data.nik;
+  if (data.religion !== undefined) updates.religion = data.religion;
+  if (data.birthPlace !== undefined) updates.birth_place = data.birthPlace;
+  if (data.birthDate !== undefined) updates.birth_date = data.birthDate;
+  if (data.maritalStatus !== undefined) updates.marital_status = data.maritalStatus;
+  if (data.gender !== undefined) updates.gender = data.gender;
+  if (data.bankName !== undefined) updates.bank_name = data.bankName;
+  if (data.bankAccountNumber !== undefined) updates.bank_account_number = data.bankAccountNumber;
+  if (data.bankAccountName !== undefined) updates.bank_account_name = data.bankAccountName;
 
   const { data: row, error } = await db()
     .from("mitra")

@@ -8,6 +8,9 @@ import {
   Trash2,
   Eye,
   MoreHorizontal,
+  Pencil,
+  Save,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { DashboardHeader } from "@/components/layout/dashboard-header";
@@ -54,11 +57,13 @@ import {
   formatCurrency,
   getMitraStatusLabel,
 } from "@/stores/data-store";
+import { Label } from "@/components/ui/label";
 import type { Mitra } from "@/types";
 
 export default function MitraPage() {
   const mitra = useDataStore((s) => s.mitra);
   const updateMitraStatus = useDataStore((s) => s.updateMitraStatus);
+  const updateMitraProfile = useDataStore((s) => s.updateMitraProfile);
   const deleteMitra = useDataStore((s) => s.deleteMitra);
 
   const [search, setSearch] = useState("");
@@ -69,6 +74,9 @@ export default function MitraPage() {
   const [rejectTarget, setRejectTarget] = useState<Mitra | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [rejectLoading, setRejectLoading] = useState(false);
+  const [editTarget, setEditTarget] = useState<Mitra | null>(null);
+  const [editForm, setEditForm] = useState<Record<string, string>>({});
+  const [editLoading, setEditLoading] = useState(false);
 
   const filterMitra = (list: Mitra[]) => {
     const q = search.toLowerCase();
@@ -135,6 +143,40 @@ export default function MitraPage() {
     setDeleteTarget(null);
   };
 
+  const openEditDialog = (m: Mitra) => {
+    const ext = m as unknown as Record<string, string>;
+    setEditForm({
+      name: m.name || "",
+      email: m.email || "",
+      phone: m.phone || "",
+      address: m.address || "",
+      nik: ext.nik || "",
+      religion: ext.religion || "",
+      birthPlace: ext.birthPlace || "",
+      birthDate: ext.birthDate || "",
+      maritalStatus: ext.maritalStatus || "",
+      gender: ext.gender || "",
+      bankName: ext.bankName || "",
+      bankAccountNumber: ext.bankAccountNumber || "",
+      bankAccountName: ext.bankAccountName || "",
+    });
+    setEditTarget(m);
+  };
+
+  const handleEditSave = async () => {
+    if (!editTarget) return;
+    setEditLoading(true);
+    try {
+      await updateMitraProfile(editTarget.id, editForm);
+      toast.success(`Data ${editForm.name || editTarget.name} berhasil diperbarui`);
+      setEditTarget(null);
+    } catch {
+      toast.error("Gagal menyimpan perubahan");
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
   const statusBadge = (status: string) => {
     const map: Record<string, string> = {
       pending: "bg-amber-100 text-amber-800",
@@ -190,6 +232,10 @@ export default function MitraPage() {
                     <DropdownMenuItem onClick={() => setSelectedMitra(m)}>
                       <Eye className="mr-2 h-4 w-4" />
                       Lihat Detail
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => openEditDialog(m)}>
+                      <Pencil className="mr-2 h-4 w-4 text-blue-600" />
+                      Edit Akun
                     </DropdownMenuItem>
                     {m.status === "pending" && (
                       <DropdownMenuItem onClick={() => handleApprove(m)}>
@@ -447,6 +493,166 @@ export default function MitraPage() {
           </div>
         </div>
       )}
+
+      {/* Edit Akun Dialog */}
+      <Dialog open={!!editTarget} onOpenChange={(o) => { if (!o) setEditTarget(null); }}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="h-5 w-5 text-blue-600" />
+              Edit Akun Mitra
+            </DialogTitle>
+            <DialogDescription>
+              Perbarui data akun <strong>{editTarget?.name}</strong>
+            </DialogDescription>
+          </DialogHeader>
+          {editTarget && (
+            <div className="space-y-5">
+              {/* Data Pribadi */}
+              <div>
+                <h4 className="text-sm font-semibold text-foreground mb-3 border-b pb-1">Data Pribadi</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="edit-name">Nama Lengkap</Label>
+                    <Input
+                      id="edit-name"
+                      value={editForm.name ?? ""}
+                      onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="edit-email">Email</Label>
+                    <Input
+                      id="edit-email"
+                      type="email"
+                      value={editForm.email ?? ""}
+                      onChange={(e) => setEditForm((f) => ({ ...f, email: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="edit-phone">Telepon</Label>
+                    <Input
+                      id="edit-phone"
+                      value={editForm.phone ?? ""}
+                      onChange={(e) => setEditForm((f) => ({ ...f, phone: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="edit-nik">NIK KTP</Label>
+                    <Input
+                      id="edit-nik"
+                      value={editForm.nik ?? ""}
+                      onChange={(e) => setEditForm((f) => ({ ...f, nik: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="edit-gender">Jenis Kelamin</Label>
+                    <Input
+                      id="edit-gender"
+                      placeholder="Laki-Laki / Perempuan"
+                      value={editForm.gender ?? ""}
+                      onChange={(e) => setEditForm((f) => ({ ...f, gender: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="edit-religion">Agama</Label>
+                    <Input
+                      id="edit-religion"
+                      value={editForm.religion ?? ""}
+                      onChange={(e) => setEditForm((f) => ({ ...f, religion: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="edit-birthPlace">Tempat Lahir</Label>
+                    <Input
+                      id="edit-birthPlace"
+                      value={editForm.birthPlace ?? ""}
+                      onChange={(e) => setEditForm((f) => ({ ...f, birthPlace: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="edit-birthDate">Tanggal Lahir</Label>
+                    <Input
+                      id="edit-birthDate"
+                      type="date"
+                      value={editForm.birthDate ?? ""}
+                      onChange={(e) => setEditForm((f) => ({ ...f, birthDate: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="edit-maritalStatus">Status Perkawinan</Label>
+                    <Input
+                      id="edit-maritalStatus"
+                      placeholder="Belum Menikah / Menikah / Cerai"
+                      value={editForm.maritalStatus ?? ""}
+                      onChange={(e) => setEditForm((f) => ({ ...f, maritalStatus: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1.5 md:col-span-2">
+                    <Label htmlFor="edit-address">Alamat KTP</Label>
+                    <Textarea
+                      id="edit-address"
+                      rows={2}
+                      value={editForm.address ?? ""}
+                      onChange={(e) => setEditForm((f) => ({ ...f, address: e.target.value }))}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Rekening Bank */}
+              <div>
+                <h4 className="text-sm font-semibold text-foreground mb-3 border-b pb-1">Rekening Bank</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="edit-bankName">Nama Bank</Label>
+                    <Input
+                      id="edit-bankName"
+                      placeholder="BCA, BRI, Mandiri, dll."
+                      value={editForm.bankName ?? ""}
+                      onChange={(e) => setEditForm((f) => ({ ...f, bankName: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="edit-bankAccountNumber">No. Rekening</Label>
+                    <Input
+                      id="edit-bankAccountNumber"
+                      value={editForm.bankAccountNumber ?? ""}
+                      onChange={(e) => setEditForm((f) => ({ ...f, bankAccountNumber: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1.5 md:col-span-2">
+                    <Label htmlFor="edit-bankAccountName">Atas Nama Rekening</Label>
+                    <Input
+                      id="edit-bankAccountName"
+                      value={editForm.bankAccountName ?? ""}
+                      onChange={(e) => setEditForm((f) => ({ ...f, bankAccountName: e.target.value }))}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setEditTarget(null)} disabled={editLoading}>
+              Batal
+            </Button>
+            <Button onClick={handleEditSave} disabled={editLoading || !editForm.name?.trim()}>
+              {editLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Menyimpan...
+                </>
+              ) : (
+                <>
+                  <Save className="mr-2 h-4 w-4" />
+                  Simpan Perubahan
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
