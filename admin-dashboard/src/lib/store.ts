@@ -183,11 +183,13 @@ export async function uploadProof(
 export async function verifySlot(
   woId: string,
   mitraId: string,
-  action: "approve" | "reject"
+  action: "approve" | "reject",
+  rejectedPhotoTypes?: ("before" | "after")[],
+  rejectionReason?: string
 ) {
   return useDb()
-    ? supabase.supabaseVerifySlot(woId, mitraId, action)
-    : memory.memoryVerifySlot(woId, mitraId, action);
+    ? supabase.supabaseVerifySlot(woId, mitraId, action, rejectedPhotoTypes, rejectionReason)
+    : memory.memoryVerifySlot(woId, mitraId, action, rejectedPhotoTypes, rejectionReason);
 }
 
 export async function uploadTransferProof(

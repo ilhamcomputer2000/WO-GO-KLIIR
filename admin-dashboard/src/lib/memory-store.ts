@@ -335,7 +335,9 @@ export async function memoryUpdatePayoutStatus(id: string, status: PayoutStatus)
 export async function memoryVerifySlot(
   woId: string,
   mitraId: string,
-  action: "approve" | "reject"
+  action: "approve" | "reject",
+  rejectedPhotoTypes?: ("before" | "after")[],
+  rejectionReason?: string
 ) {
   const store = getStore();
   const wo = store.workOrders.find((w) => w.id === woId);
@@ -360,13 +362,39 @@ export async function memoryVerifySlot(
   if (action === "approve") {
     slot.verificationStatus = "approved";
     slot.verifiedAt = now;
+    slot.rejectedPhotoTypes = undefined;
+    slot.rejectionReason = undefined;
     payout.status = "approved";
     payout.verifiedAt = now.split("T")[0];
     checkWoVerified(wo);
   } else {
+    // Partial reject: only clear the rejected photo(s)
+    const rejected = rejectedPhotoTypes && rejectedPhotoTypes.length > 0
+      ? rejectedPhotoTypes
+      : ["before", "after"] as ("before" | "after")[];
+
+    if (rejected.includes("before")) {
+      slot.beforePhotoUrl = undefined;
+      slot.beforeRemark = undefined;
+      // Remove old proof entries from store
+      store.proofs = store.proofs.filter(
+        (p) => !(p.woId === woId && p.slotId === slot.id && p.mitraId === mitraId && p.proofType === "before")
+      );
+    }
+    if (rejected.includes("after")) {
+      slot.afterPhotoUrl = undefined;
+      slot.afterRemark = undefined;
+      store.proofs = store.proofs.filter(
+        (p) => !(p.woId === woId && p.slotId === slot.id && p.mitraId === mitraId && p.proofType === "after")
+      );
+    }
+
     slot.verificationStatus = "rejected";
+    slot.rejectedPhotoTypes = rejected;
+    slot.rejectionReason = rejectionReason;
     slot.status = "taken";
-    slot.progress = 75;
+    // Progress: if only after rejected → 50 (before still valid), if before rejected → 0
+    slot.progress = rejected.includes("before") ? 0 : 50;
     payout.status = "rejected";
     wo.status = "in_progress";
     checkWoCompletion(wo);

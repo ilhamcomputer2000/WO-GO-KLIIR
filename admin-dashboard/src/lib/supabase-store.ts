@@ -529,7 +529,9 @@ export async function supabaseUploadProof(
 export async function supabaseVerifySlot(
   woId: string,
   mitraId: string,
-  action: "approve" | "reject"
+  action: "approve" | "reject",
+  rejectedPhotoTypes?: ("before" | "after")[],
+  rejectionReason?: string
 ) {
   const wo = await supabaseGetWorkOrderById(woId);
   if (!wo) return { success: false as const, error: "Work Order tidak ditemukan" };
@@ -554,6 +556,8 @@ export async function supabaseVerifySlot(
   if (action === "approve") {
     slot.verificationStatus = "approved";
     slot.verifiedAt = now;
+    slot.rejectedPhotoTypes = undefined;
+    slot.rejectionReason = undefined;
     payout.status = "approved";
     payout.verifiedAt = now.split("T")[0];
     checkWoVerified(wo);
@@ -562,9 +566,40 @@ export async function supabaseVerifySlot(
       .update({ status: "approved", verified_at: payout.verifiedAt })
       .eq("id", payout.id);
   } else {
+    // Partial reject: only clear the rejected photo(s)
+    const rejected = rejectedPhotoTypes && rejectedPhotoTypes.length > 0
+      ? rejectedPhotoTypes
+      : ["before", "after"] as ("before" | "after")[];
+
+    if (rejected.includes("before")) {
+      slot.beforePhotoUrl = undefined;
+      slot.beforeRemark = undefined;
+      // Remove proof record from DB
+      await db()
+        .from("completion_proofs")
+        .delete()
+        .eq("wo_id", woId)
+        .eq("slot_id", slot.id)
+        .eq("mitra_id", mitraId)
+        .eq("proof_type", "before");
+    }
+    if (rejected.includes("after")) {
+      slot.afterPhotoUrl = undefined;
+      slot.afterRemark = undefined;
+      await db()
+        .from("completion_proofs")
+        .delete()
+        .eq("wo_id", woId)
+        .eq("slot_id", slot.id)
+        .eq("mitra_id", mitraId)
+        .eq("proof_type", "after");
+    }
+
     slot.verificationStatus = "rejected";
+    slot.rejectedPhotoTypes = rejected;
+    slot.rejectionReason = rejectionReason;
     slot.status = "taken";
-    slot.progress = 75;
+    slot.progress = rejected.includes("before") ? 0 : 50;
     payout.status = "rejected";
     wo.status = "in_progress";
     checkWoCompletion(wo);

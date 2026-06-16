@@ -46,7 +46,9 @@ interface DataState {
   verifySlot: (
     woId: string,
     mitraId: string,
-    action: "approve" | "reject"
+    action: "approve" | "reject",
+    rejectedPhotos?: ("before" | "after")[],
+    rejectionReason?: string
   ) => Promise<void>;
   uploadTransferProof: (payoutId: string, file: File) => Promise<void>;
 }
@@ -140,8 +142,8 @@ export const useDataStore = create<DataState>()((set, get) => ({
     await get().sync();
   },
 
-  verifySlot: async (woId, mitraId, action) => {
-    await apiVerifySlot(woId, mitraId, action);
+  verifySlot: async (woId, mitraId, action, rejectedPhotos, rejectionReason) => {
+    await apiVerifySlot(woId, mitraId, action, rejectedPhotos, rejectionReason);
     await get().sync();
   },
 

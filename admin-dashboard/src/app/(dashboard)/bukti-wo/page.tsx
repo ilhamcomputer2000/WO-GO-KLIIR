@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Search, Camera, Filter, CheckCircle, XCircle, AlertCircle, Info } from "lucide-react";
+import { Search, Camera, Filter, CheckCircle, XCircle, AlertCircle, Info, ImageIcon } from "lucide-react";
 import { toast } from "sonner";
 import { DashboardHeader } from "@/components/layout/dashboard-header";
 import { Input } from "@/components/ui/input";
@@ -64,6 +64,7 @@ export default function BuktiWoPage() {
   // Reject dialog state
   const [rejectTarget, setRejectTarget] = useState<(typeof slotGroups)[0] | null>(null);
   const [rejectReason, setRejectReason] = useState("");
+  const [rejectPhotos, setRejectPhotos] = useState<("before" | "after")[]>([]);
   const [rejectLoading, setRejectLoading] = useState(false);
 
   const getSlotData = (woId: string, slotId: string) => {
@@ -138,15 +139,38 @@ export default function BuktiWoPage() {
     }
   };
 
+  const openRejectDialog = (group: (typeof slotGroups)[0]) => {
+    setRejectTarget(group);
+    setRejectReason("");
+    // Default: pre-select all photos that exist
+    const defaults: ("before" | "after")[] = [];
+    if (group.before) defaults.push("before");
+    if (group.after) defaults.push("after");
+    setRejectPhotos(defaults);
+  };
+
+  const toggleRejectPhoto = (type: "before" | "after") => {
+    setRejectPhotos((prev) =>
+      prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]
+    );
+  };
+
   const handleReject = async () => {
     if (!rejectTarget) return;
+    if (rejectPhotos.length === 0) {
+      toast.error("Pilih minimal 1 foto yang ditolak");
+      return;
+    }
     if (!rejectReason.trim()) {
       toast.error("Alasan penolakan wajib diisi");
       return;
     }
     setRejectLoading(true);
     try {
-      await verifySlot(rejectTarget.woId, rejectTarget.mitraId, "reject");
+      await verifySlot(rejectTarget.woId, rejectTarget.mitraId, "reject", rejectPhotos, rejectReason.trim());
+      const photoLabel = rejectPhotos.length === 2
+        ? "Semua foto"
+        : rejectPhotos.includes("before") ? "Foto sebelum" : "Foto setelah";
       // Kirim notifikasi ke mitra dengan alasan
       await fetch("/api/notifications", {
         method: "POST",
@@ -154,15 +178,16 @@ export default function BuktiWoPage() {
         body: JSON.stringify({
           type: "slot_rejected",
           title: "⚠️ Foto Pekerjaan Ditolak",
-          body: `Foto untuk WO ${rejectTarget.before?.woTitle ?? rejectTarget.woId} ditolak. Alasan: ${rejectReason.trim()}. Silakan upload foto yang benar — slot masih milik Anda.`,
+          body: `${photoLabel} untuk WO ${rejectTarget.before?.woTitle ?? rejectTarget.woId} ditolak. Alasan: ${rejectReason.trim()}. Silakan upload foto yang benar — slot masih milik Anda.`,
           target: "mitra",
           mitra_id: rejectTarget.mitraId,
-          data: { woId: rejectTarget.woId, reason: rejectReason.trim() },
+          data: { woId: rejectTarget.woId, reason: rejectReason.trim(), rejectedPhotos: rejectPhotos },
         }),
       });
-      toast.warning("Foto ditolak — mitra diberi notifikasi untuk upload ulang. Slot tetap milik mitra.");
+      toast.warning(`${photoLabel} ditolak — mitra diberi notifikasi untuk upload ulang. Slot tetap milik mitra.`);
       setRejectTarget(null);
       setRejectReason("");
+      setRejectPhotos([]);
       setSelectedSlotKey(null);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Gagal menolak");
@@ -277,15 +302,27 @@ export default function BuktiWoPage() {
                         </Button>
                         <Button size="sm" variant="outline" className="flex-1 h-8 text-red-600 border-red-200 hover:bg-red-50"
                           disabled={processing}
-                          onClick={(e) => { e.stopPropagation(); setRejectTarget(group); setRejectReason(""); }}>
+                          onClick={(e) => { e.stopPropagation(); openRejectDialog(group); }}>
                           <XCircle className="h-3 w-3 mr-1" />Tolak
                         </Button>
                       </div>
                     )}
                     {group.vStatus === "rejected" && (
-                      <div className="flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 rounded px-2 py-1.5">
-                        <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-                        Menunggu upload ulang dari mitra
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 rounded px-2 py-1.5">
+                          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                          Menunggu upload ulang dari mitra
+                        </div>
+                        {group.slot?.rejectedPhotoTypes && (
+                          <div className="flex gap-1">
+                            {group.slot.rejectedPhotoTypes.includes("before") && (
+                              <span className="text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded">Sebelum ditolak</span>
+                            )}
+                            {group.slot.rejectedPhotoTypes.includes("after") && (
+                              <span className="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded">Setelah ditolak</span>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
                   </CardContent>
@@ -370,19 +407,34 @@ export default function BuktiWoPage() {
                   </Button>
                   <Button variant="outline" className="flex-1 text-red-600 border-red-200 hover:bg-red-50"
                     disabled={processing}
-                    onClick={() => { setRejectTarget(selectedGroup); setRejectReason(""); }}>
+                    onClick={() => openRejectDialog(selectedGroup)}>
                     <XCircle className="mr-2 h-4 w-4" />Foto Tidak Sesuai — Tolak
                   </Button>
                 </div>
               )}
 
               {selectedGroup.vStatus === "rejected" && (
-                <div className="rounded-md bg-amber-50 border border-amber-200 p-3 flex items-start gap-2">
-                  <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
-                  <div>
-                    <p className="text-sm font-semibold text-amber-800">Foto sudah ditolak</p>
-                    <p className="text-xs text-amber-700 mt-0.5">Mitra sedang diminta upload foto ulang. Slot tetap milik mitra.</p>
+                <div className="rounded-md bg-amber-50 border border-amber-200 p-3 space-y-2">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-sm font-semibold text-amber-800">Foto sudah ditolak</p>
+                      <p className="text-xs text-amber-700 mt-0.5">Mitra sedang diminta upload foto ulang. Slot tetap milik mitra.</p>
+                    </div>
                   </div>
+                  {selectedGroup.slot?.rejectedPhotoTypes && (
+                    <div className="flex gap-2 pl-6">
+                      {selectedGroup.slot.rejectedPhotoTypes.includes("before") && (
+                        <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-medium">📷 Sebelum ditolak</span>
+                      )}
+                      {selectedGroup.slot.rejectedPhotoTypes.includes("after") && (
+                        <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium">✅ Setelah ditolak</span>
+                      )}
+                    </div>
+                  )}
+                  {selectedGroup.slot?.rejectionReason && (
+                    <p className="text-xs text-amber-800 pl-6 italic">Alasan: {selectedGroup.slot.rejectionReason}</p>
+                  )}
                 </div>
               )}
             </div>
@@ -390,8 +442,8 @@ export default function BuktiWoPage() {
         </DialogContent>
       </Dialog>
 
-      {/* ── Reject Dialog — dengan input alasan ── */}
-      <Dialog open={!!rejectTarget} onOpenChange={(o) => { if (!o) { setRejectTarget(null); setRejectReason(""); } }}>
+      {/* ── Reject Dialog — pilih foto + alasan ── */}
+      <Dialog open={!!rejectTarget} onOpenChange={(o) => { if (!o) { setRejectTarget(null); setRejectReason(""); setRejectPhotos([]); } }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-red-700">
@@ -403,9 +455,106 @@ export default function BuktiWoPage() {
             <div className="rounded-md bg-blue-50 border border-blue-100 p-3 flex items-start gap-2">
               <Info className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
               <p className="text-xs text-blue-800">
-                <strong>Slot tetap milik mitra.</strong> Mitra akan mendapat notifikasi dan dapat mengupload foto yang benar.
-                WO tidak akan hilang dari akun mitra.
+                <strong>Slot tetap milik mitra.</strong> Hanya foto yang dipilih yang akan dihapus.
+                Mitra mendapat notifikasi dan bisa upload ulang foto yang salah.
               </p>
+            </div>
+
+            {/* Pilih foto yang ditolak */}
+            <div>
+              <p className="text-sm font-medium mb-2">
+                Foto yang Ditolak <span className="text-red-500">*</span>
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                {/* Tombol sebelum */}
+                <button
+                  type="button"
+                  onClick={() => toggleRejectPhoto("before")}
+                  disabled={!rejectTarget?.before}
+                  className={[
+                    "relative rounded-lg border-2 overflow-hidden transition-all text-left",
+                    !rejectTarget?.before
+                      ? "opacity-40 cursor-not-allowed border-muted"
+                      : rejectPhotos.includes("before")
+                      ? "border-red-500 ring-2 ring-red-200"
+                      : "border-muted hover:border-red-300",
+                  ].join(" ")}
+                >
+                  <div className="aspect-[4/3] bg-muted">
+                    {rejectTarget?.before ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={rejectTarget.before.imageUrl} alt="Sebelum" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <ImageIcon className="h-6 w-6 text-muted-foreground" />
+                      </div>
+                    )}
+                  </div>
+                  <div className={[
+                    "px-2 py-1.5 flex items-center gap-1.5 text-xs font-semibold",
+                    rejectPhotos.includes("before") ? "bg-red-50 text-red-700" : "text-muted-foreground",
+                  ].join(" ")}>
+                    <div className={[
+                      "w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0",
+                      rejectPhotos.includes("before") ? "bg-red-500 border-red-500" : "border-muted-foreground",
+                    ].join(" ")}>
+                      {rejectPhotos.includes("before") && <span className="text-white text-[8px] leading-none">✓</span>}
+                    </div>
+                    📷 Foto Sebelum
+                  </div>
+                  {!rejectTarget?.before && (
+                    <div className="absolute inset-0 flex items-end justify-center pb-1">
+                      <span className="text-[10px] text-muted-foreground bg-background/80 px-1 rounded">Belum ada</span>
+                    </div>
+                  )}
+                </button>
+
+                {/* Tombol setelah */}
+                <button
+                  type="button"
+                  onClick={() => toggleRejectPhoto("after")}
+                  disabled={!rejectTarget?.after}
+                  className={[
+                    "relative rounded-lg border-2 overflow-hidden transition-all text-left",
+                    !rejectTarget?.after
+                      ? "opacity-40 cursor-not-allowed border-muted"
+                      : rejectPhotos.includes("after")
+                      ? "border-red-500 ring-2 ring-red-200"
+                      : "border-muted hover:border-red-300",
+                  ].join(" ")}
+                >
+                  <div className="aspect-[4/3] bg-muted">
+                    {rejectTarget?.after ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={rejectTarget.after.imageUrl} alt="Setelah" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <ImageIcon className="h-6 w-6 text-muted-foreground" />
+                      </div>
+                    )}
+                  </div>
+                  <div className={[
+                    "px-2 py-1.5 flex items-center gap-1.5 text-xs font-semibold",
+                    rejectPhotos.includes("after") ? "bg-red-50 text-red-700" : "text-muted-foreground",
+                  ].join(" ")}>
+                    <div className={[
+                      "w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0",
+                      rejectPhotos.includes("after") ? "bg-red-500 border-red-500" : "border-muted-foreground",
+                    ].join(" ")}>
+                      {rejectPhotos.includes("after") && <span className="text-white text-[8px] leading-none">✓</span>}
+                    </div>
+                    ✅ Foto Setelah
+                  </div>
+                  {!rejectTarget?.after && (
+                    <div className="absolute inset-0 flex items-end justify-center pb-1">
+                      <span className="text-[10px] text-muted-foreground bg-background/80 px-1 rounded">Belum ada</span>
+                    </div>
+                  )}
+                </button>
+              </div>
+              {rejectPhotos.length === 0 && (
+                <p className="text-xs text-red-500 mt-1">Pilih minimal 1 foto yang ditolak</p>
+              )}
             </div>
 
             <div>
@@ -414,7 +563,7 @@ export default function BuktiWoPage() {
                 placeholder="Contoh: Foto tidak jelas / buram. Foto tidak menunjukkan area yang dikerjakan. Mohon foto ulang dengan pencahayaan yang cukup."
                 value={rejectReason}
                 onChange={(e) => setRejectReason(e.target.value)}
-                rows={4}
+                rows={3}
                 className="resize-none"
               />
               <p className="text-xs text-muted-foreground mt-1">
@@ -423,15 +572,21 @@ export default function BuktiWoPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setRejectTarget(null); setRejectReason(""); }} disabled={rejectLoading}>
+            <Button variant="outline" onClick={() => { setRejectTarget(null); setRejectReason(""); setRejectPhotos([]); }} disabled={rejectLoading}>
               Batal
             </Button>
             <Button
               variant="destructive"
-              disabled={!rejectReason.trim() || rejectLoading}
+              disabled={rejectPhotos.length === 0 || !rejectReason.trim() || rejectLoading}
               onClick={handleReject}
             >
-              {rejectLoading ? "Menolak..." : "Tolak & Kirim Notifikasi"}
+              {rejectLoading
+                ? "Menolak..."
+                : rejectPhotos.length === 2
+                ? "Tolak Semua Foto"
+                : rejectPhotos.includes("before")
+                ? "Tolak Foto Sebelum"
+                : "Tolak Foto Setelah"}
             </Button>
           </DialogFooter>
         </DialogContent>

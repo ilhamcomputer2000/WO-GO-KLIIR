@@ -52,6 +52,10 @@ export interface WorkOrderSlot {
   /** Status verifikasi admin setelah mitra selesai */
   verificationStatus?: SlotVerificationStatus;
   verifiedAt?: string;
+  /** Foto mana yang direject admin: "before", "after", atau keduanya */
+  rejectedPhotoTypes?: ("before" | "after")[];
+  /** Alasan penolakan dari admin */
+  rejectionReason?: string;
 }
 
 export interface CompletionProof {

@@ -73,7 +73,9 @@ export async function apiUpdatePayoutStatus(id: string, status: PayoutStatus) {
 export async function apiVerifySlot(
   woId: string,
   mitraId: string,
-  action: "approve" | "reject"
+  action: "approve" | "reject",
+  rejectedPhotos?: ("before" | "after")[],
+  rejectionReason?: string
 ) {
   return request<{
     message: string;
@@ -81,7 +83,7 @@ export async function apiVerifySlot(
     payout: PayoutRecord;
   }>(`/api/work-orders/${woId}/verify-slot`, {
     method: "POST",
-    body: JSON.stringify({ mitraId, action }),
+    body: JSON.stringify({ mitraId, action, rejectedPhotos, rejectionReason }),
   });
 }
 
