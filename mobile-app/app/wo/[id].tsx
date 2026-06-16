@@ -44,7 +44,6 @@ export default function WorkOrderDetailScreen() {
   const [myPayout, setMyPayout] = useState<PayoutRecord | null>(null);
   const [beforeRemark, setBeforeRemark] = useState("");
   const [afterRemark, setAfterRemark] = useState("");
-  const [fetchingLocation, setFetchingLocation] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = async (silent = false) => {
@@ -171,14 +170,18 @@ export default function WorkOrderDetailScreen() {
   const isBeforeRejected = rejectedPhotos.includes("before");
   const isAfterRejected = rejectedPhotos.includes("after");
   const hasAnyRejection = mySlot?.verificationStatus === "rejected";
+  // Fallback: if rejected but no specific photo types recorded, both need re-upload
+  const bothRejectedFallback = hasAnyRejection && rejectedPhotos.length === 0;
 
-  // A photo slot needs upload if: it's rejected OR it was never uploaded
-  const needsBeforeUpload = hasAnyRejection
-    ? isBeforeRejected
+  const isBeforeNeedsUpload = hasAnyRejection
+    ? (isBeforeRejected || bothRejectedFallback || !mySlot?.beforePhotoUrl)
     : !mySlot?.beforePhotoUrl;
-  const needsAfterUpload = hasAnyRejection
-    ? isAfterRejected
+  const isAfterNeedsUpload = hasAnyRejection
+    ? (isAfterRejected || bothRejectedFallback || !mySlot?.afterPhotoUrl)
     : !mySlot?.afterPhotoUrl;
+
+  // Show photo card when: slot is active (taken) OR rejected state
+  const showPhotoCards = mySlot && (mySlot.status === "taken" || hasAnyRejection);
 
   return (
     <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
@@ -267,19 +270,19 @@ export default function WorkOrderDetailScreen() {
       )}
 
       {/* ── Foto SEBELUM ── */}
-      {mySlot && mySlot.status !== "completed" && (
+      {showPhotoCards && (
         <View style={styles.photoCard}>
           <View style={styles.photoCardHeader}>
-            <View style={[styles.photoBadge, { backgroundColor: isBeforeRejected ? "#ffebee" : "#fff3e0" }]}>
-              <Text style={[styles.photoBadgeText, { color: isBeforeRejected ? "#c62828" : "#e65100" }]}>
-                {isBeforeRejected ? "✗ SEBELUM" : "SEBELUM"}
+            <View style={[styles.photoBadge, { backgroundColor: (isBeforeRejected || bothRejectedFallback) ? "#ffebee" : "#fff3e0" }]}>
+              <Text style={[styles.photoBadgeText, { color: (isBeforeRejected || bothRejectedFallback) ? "#c62828" : "#e65100" }]}>
+                {(isBeforeRejected || bothRejectedFallback) ? "✗ SEBELUM" : "SEBELUM"}
               </Text>
             </View>
             <Text style={styles.photoCardTitle}>Foto Sebelum Mulai</Text>
           </View>
 
-          {/* Show existing photo if not rejected */}
-          {mySlot.beforePhotoUrl && !isBeforeRejected ? (
+          {/* Show existing photo only if it exists AND is not rejected */}
+          {mySlot?.beforePhotoUrl && !isBeforeNeedsUpload ? (
             <>
               <Image source={{ uri: resolveImageUrl(mySlot.beforePhotoUrl) }} style={styles.proofImage} resizeMode="cover" />
               {mySlot.beforeRemark ? (
@@ -292,14 +295,13 @@ export default function WorkOrderDetailScreen() {
                 <Text style={styles.uploadedText}>✓ Foto sebelum sudah diunggah</Text>
               </View>
             </>
-          ) : needsBeforeUpload ? (
+          ) : (
             <>
-              {isBeforeRejected && (
+              {isBeforeNeedsUpload && hasAnyRejection ? (
                 <View style={styles.rejectedPhotoBanner}>
                   <Text style={styles.rejectedPhotoText}>Foto ini ditolak — upload foto baru yang benar</Text>
                 </View>
-              )}
-              {!isBeforeRejected && (
+              ) : (
                 <Text style={styles.photoHint}>Ambil foto kondisi area/peralatan sebelum mulai pekerjaan</Text>
               )}
               <TextInput
@@ -313,39 +315,39 @@ export default function WorkOrderDetailScreen() {
               />
               <View style={styles.photoBtns}>
                 <TouchableOpacity
-                  style={[styles.photoBtn, { backgroundColor: isBeforeRejected ? "#c62828" : "#e65100" }, uploading === "before" && styles.photoBtnDisabled]}
+                  style={[styles.photoBtn, { backgroundColor: (isBeforeRejected || bothRejectedFallback) ? "#c62828" : "#e65100" }, uploading === "before" && styles.photoBtnDisabled]}
                   onPress={() => pickAndUpload("before", true)}
-                  disabled={uploading !== null || fetchingLocation}
+                  disabled={uploading !== null}
                 >
                   <Text style={styles.photoBtnText}>📷 Ambil Foto</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.photoBtnOutline, uploading === "before" && styles.photoBtnDisabled]}
                   onPress={() => pickAndUpload("before", false)}
-                  disabled={uploading !== null || fetchingLocation}
+                  disabled={uploading !== null}
                 >
                   <Text style={styles.photoBtnOutlineText}>🖼 Dari Galeri</Text>
                 </TouchableOpacity>
               </View>
               {uploading === "before" && <ActivityIndicator color="#e65100" style={{ marginTop: 8 }} />}
             </>
-          ) : null}
+          )}
         </View>
       )}
 
-      {/* ── Foto SETELAH — muncul jika before sudah ada atau hanya after yang direject ── */}
-      {mySlot && mySlot.status !== "completed" && (mySlot.beforePhotoUrl || isAfterRejected) && (
+      {/* ── Foto SETELAH — muncul jika before sudah ada atau after direject ── */}
+      {showPhotoCards && (mySlot?.beforePhotoUrl || isAfterNeedsUpload) && (
         <View style={styles.photoCard}>
           <View style={styles.photoCardHeader}>
-            <View style={[styles.photoBadge, { backgroundColor: isAfterRejected ? "#ffebee" : "#e8f5e9" }]}>
-              <Text style={[styles.photoBadgeText, { color: isAfterRejected ? "#c62828" : "#2e7d32" }]}>
-                {isAfterRejected ? "✗ SETELAH" : "SETELAH"}
+            <View style={[styles.photoBadge, { backgroundColor: (isAfterRejected || bothRejectedFallback) ? "#ffebee" : "#e8f5e9" }]}>
+              <Text style={[styles.photoBadgeText, { color: (isAfterRejected || bothRejectedFallback) ? "#c62828" : "#2e7d32" }]}>
+                {(isAfterRejected || bothRejectedFallback) ? "✗ SETELAH" : "SETELAH"}
               </Text>
             </View>
             <Text style={styles.photoCardTitle}>Foto Setelah Selesai</Text>
           </View>
 
-          {mySlot.afterPhotoUrl && !isAfterRejected ? (
+          {mySlot?.afterPhotoUrl && !isAfterNeedsUpload ? (
             <>
               <Image source={{ uri: resolveImageUrl(mySlot.afterPhotoUrl) }} style={styles.proofImage} resizeMode="cover" />
               {mySlot.afterRemark ? (
@@ -355,14 +357,13 @@ export default function WorkOrderDetailScreen() {
                 </View>
               ) : null}
             </>
-          ) : needsAfterUpload ? (
+          ) : (
             <>
-              {isAfterRejected && (
+              {isAfterNeedsUpload && hasAnyRejection ? (
                 <View style={styles.rejectedPhotoBanner}>
                   <Text style={styles.rejectedPhotoText}>Foto ini ditolak — upload foto baru yang benar</Text>
                 </View>
-              )}
-              {!isAfterRejected && (
+              ) : (
                 <Text style={styles.photoHint}>Ambil foto kondisi area/hasil pekerjaan setelah selesai</Text>
               )}
               <TextInput
@@ -376,28 +377,28 @@ export default function WorkOrderDetailScreen() {
               />
               <View style={styles.photoBtns}>
                 <TouchableOpacity
-                  style={[styles.photoBtn, { backgroundColor: isAfterRejected ? "#c62828" : "#2e7d32" }, uploading === "after" && styles.photoBtnDisabled]}
+                  style={[styles.photoBtn, { backgroundColor: (isAfterRejected || bothRejectedFallback) ? "#c62828" : "#2e7d32" }, uploading === "after" && styles.photoBtnDisabled]}
                   onPress={() => pickAndUpload("after", true)}
-                  disabled={uploading !== null || fetchingLocation}
+                  disabled={uploading !== null}
                 >
                   <Text style={styles.photoBtnText}>📷 Ambil Foto</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.photoBtnOutline, uploading === "after" && styles.photoBtnDisabled]}
                   onPress={() => pickAndUpload("after", false)}
-                  disabled={uploading !== null || fetchingLocation}
+                  disabled={uploading !== null}
                 >
                   <Text style={styles.photoBtnOutlineText}>🖼 Dari Galeri</Text>
                 </TouchableOpacity>
               </View>
               {uploading === "after" && <ActivityIndicator color="#2e7d32" style={{ marginTop: 8 }} />}
             </>
-          ) : null}
+          )}
         </View>
       )}
 
-      {/* ── Completed banner ── */}
-      {mySlot?.status === "completed" && (
+      {/* ── Completed banner — hanya tampil jika benar-benar selesai dan tidak ada rejection ── */}
+      {mySlot?.status === "completed" && !hasAnyRejection && (
         <View style={styles.completedBanner}>
           <Text style={styles.completedText}>Pekerjaan selesai — Slot {mySlot.slotNumber} ✓</Text>
           {mySlot.beforePhotoUrl && (
