@@ -53,7 +53,9 @@ export default function WorkOrderDetailScreen() {
       setWo(res.workOrder);
       if (mitra) {
         const payoutRes = await fetchMitraPayouts(mitra.id);
-        const payout = payoutRes.payouts.find((p) => p.woId === id);
+        // Pick the most relevant payout: prioritize non-rejected over rejected
+        const matching = payoutRes.payouts.filter((p) => p.woId === id);
+        const payout = matching.find((p) => p.status !== "rejected") ?? matching[0];
         setMyPayout(payout ?? null);
       }
     } catch (e) {
