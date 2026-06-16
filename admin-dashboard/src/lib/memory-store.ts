@@ -481,6 +481,11 @@ export async function memoryUploadProof(
 
   const imageUrl = `/uploads/proofs/${filename}`;
 
+  // Remove old proof record for this photo type (handles re-upload after rejection)
+  store.proofs = store.proofs.filter(
+    (p) => !(p.woId === woId && p.slotId === slot.id && p.mitraId === mitraId && p.proofType === proofType)
+  );
+
   // Update slot fields based on photo type
   if (proofType === "before") {
     slot.beforePhotoUrl = imageUrl;
@@ -496,6 +501,20 @@ export async function memoryUploadProof(
       const mitraData = store.mitra.find((m) => m.id === mitraId);
       if (mitraData) mitraData.completedWO += 1;
       ensurePayoutOnComplete(store, wo, slot);
+    }
+  }
+
+  // Reset rejection state if this was a re-upload after rejection
+  if (slot.verificationStatus === "rejected") {
+    const remainingRejected = (slot.rejectedPhotoTypes ?? []).filter((t) => t !== proofType);
+    if (remainingRejected.length === 0) {
+      // All rejected photos have been re-uploaded — reset to pending review
+      slot.verificationStatus = "pending_review";
+      slot.rejectedPhotoTypes = undefined;
+      slot.rejectionReason = undefined;
+    } else {
+      // Only some photos re-uploaded, keep rejection for the rest
+      slot.rejectedPhotoTypes = remainingRejected;
     }
   }
 

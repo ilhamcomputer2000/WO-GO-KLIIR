@@ -465,6 +465,16 @@ export async function supabaseUploadProof(
   const imageUrl = urlData.publicUrl;
 
   const proofId = randomUUID();
+
+  // Delete old proof record for this photo type (handles re-upload after rejection)
+  await db()
+    .from("completion_proofs")
+    .delete()
+    .eq("wo_id", woId)
+    .eq("slot_id", slot.id)
+    .eq("mitra_id", mitraId)
+    .eq("proof_type", proofType);
+
   const { error: insertError } = await db().from("completion_proofs").insert({
     id: proofId,
     wo_id: wo.id,
@@ -502,6 +512,20 @@ export async function supabaseUploadProof(
           .eq("id", mitraId);
       }
       await ensurePayoutOnComplete(wo, slot);
+    }
+  }
+
+  // Reset rejection state if this was a re-upload after rejection
+  if (slot.verificationStatus === "rejected") {
+    const remainingRejected = (slot.rejectedPhotoTypes ?? []).filter((t) => t !== proofType);
+    if (remainingRejected.length === 0) {
+      // All rejected photos have been re-uploaded — reset to pending_review
+      slot.verificationStatus = "pending_review";
+      slot.rejectedPhotoTypes = undefined;
+      slot.rejectionReason = undefined;
+    } else {
+      // Partial: only some photos re-uploaded, keep rejection for the rest
+      slot.rejectedPhotoTypes = remainingRejected;
     }
   }
 

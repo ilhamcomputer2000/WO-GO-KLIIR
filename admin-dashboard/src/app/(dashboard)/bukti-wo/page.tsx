@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Search, Camera, Filter, CheckCircle, XCircle, AlertCircle, Info, ImageIcon } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Search, Camera, Filter, CheckCircle, XCircle, AlertCircle, Info, ImageIcon, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { DashboardHeader } from "@/components/layout/dashboard-header";
 import { Input } from "@/components/ui/input";
@@ -53,6 +53,14 @@ export default function BuktiWoPage() {
   const payouts = useDataStore((s) => s.payouts);
   const mitra = useDataStore((s) => s.mitra);
   const verifySlot = useDataStore((s) => s.verifySlot);
+  const sync = useDataStore((s) => s.sync);
+  const isSyncing = useDataStore((s) => s.isSyncing);
+
+  // Auto-refresh every 5 seconds to catch mitra re-uploads
+  useEffect(() => {
+    const interval = setInterval(() => sync(), 5000);
+    return () => clearInterval(interval);
+  }, [sync]);
 
   const [search, setSearch] = useState("");
   const [woFilter, setWoFilter] = useState("all");
