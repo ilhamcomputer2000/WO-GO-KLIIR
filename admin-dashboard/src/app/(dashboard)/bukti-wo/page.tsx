@@ -307,14 +307,20 @@ export default function BuktiWoPage() {
                   <CardContent className="p-3 space-y-2">
                     <div className="flex items-center justify-between gap-2">
                       <Badge variant="outline" className="font-mono text-xs">{group.woId}</Badge>
-                      {verificationBadge(group.vStatus ?? "pending_review")}
+                      {/* If rejected but after photo now exists → treat as pending_review (re-uploaded) */}
+                      {verificationBadge(
+                        group.vStatus === "rejected" && group.after
+                          ? "pending_review"
+                          : (group.vStatus ?? "pending_review")
+                      )}
                     </div>
                     <p className="text-sm font-medium line-clamp-1">{woTitle}</p>
                     <p className="text-xs text-muted-foreground">{label}</p>
                     {group.payout && <Badge variant="outline" className="text-[10px]">{getPayoutStatusLabel(group.payout.status)}</Badge>}
 
                     {/* Action buttons on card */}
-                    {(group.vStatus === "pending_review" || !group.vStatus) && group.after && (
+                    {/* Show when: pending_review, no status yet, OR both photos exist (after re-upload) */}
+                    {group.after && group.vStatus !== "approved" && (
                       <div className="flex gap-2 pt-1">
                         <Button size="sm" className="flex-1 h-8" disabled={processing}
                           onClick={(e) => { e.stopPropagation(); handleApprove(group); }}>
@@ -327,7 +333,7 @@ export default function BuktiWoPage() {
                         </Button>
                       </div>
                     )}
-                    {group.vStatus === "rejected" && (
+                    {group.vStatus === "rejected" && !group.after && (
                       <div className="space-y-1.5">
                         <div className="flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 rounded px-2 py-1.5">
                           <AlertCircle className="h-3.5 w-3.5 shrink-0" />
@@ -420,7 +426,7 @@ export default function BuktiWoPage() {
               </Tabs>
 
               {/* Action buttons di dialog */}
-              {(selectedGroup.vStatus === "pending_review" || !selectedGroup.vStatus) && selectedGroup.after && (
+              {selectedGroup.after && selectedGroup.vStatus !== "approved" && (
                 <div className="flex gap-2 pt-2">
                   <Button className="flex-1" disabled={processing} onClick={() => handleApprove(selectedGroup)}>
                     <CheckCircle className="mr-2 h-4 w-4" />Pekerjaan Sesuai — Setujui
@@ -433,7 +439,7 @@ export default function BuktiWoPage() {
                 </div>
               )}
 
-              {selectedGroup.vStatus === "rejected" && (
+              {selectedGroup.vStatus === "rejected" && !selectedGroup.after && (
                 <div className="rounded-md bg-amber-50 border border-amber-200 p-3 space-y-2">
                   <div className="flex items-start gap-2">
                     <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />

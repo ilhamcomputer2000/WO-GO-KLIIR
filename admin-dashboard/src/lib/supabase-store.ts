@@ -32,10 +32,19 @@ function db() {
 async function ensurePayoutOnComplete(wo: WorkOrder, slot: WorkOrder["slots"][0]) {
   if (!slot.mitraId || slot.status !== "completed") return;
   const payouts = await supabaseGetPayouts();
-  const exists = payouts.find(
-    (p) => p.woId === wo.id && p.slotId === slot.id && p.status !== "rejected"
+  const existing = payouts.find(
+    (p) => p.woId === wo.id && p.slotId === slot.id && p.mitraId === slot.mitraId
   );
-  if (exists) return;
+  if (existing) {
+    // If the existing payout was rejected, reset it to pending for re-review
+    if (existing.status === "rejected") {
+      existing.status = "pending";
+      existing.verifiedAt = undefined;
+      await db().from("payouts").update({ status: "pending", verified_at: null }).eq("id", existing.id);
+    }
+    // Already has a non-rejected payout, nothing to do
+    return;
+  }
   slot.verificationStatus = "pending_review";
   const payout = buildPayoutForSlot(wo, slot, generatePayoutId(payouts));
   await db().from("payouts").insert(payoutToDb(payout));
@@ -566,9 +575,11 @@ export async function supabaseVerifySlot(
   }
 
   let payouts = await supabaseGetPayouts();
-  let payout = payouts.find(
+  // Find the most relevant payout: prefer non-rejected, fallback to rejected
+  const matchingPayouts = payouts.filter(
     (p) => p.woId === woId && p.slotId === slot.id && p.mitraId === mitraId
   );
+  let payout = matchingPayouts.find((p) => p.status !== "rejected") ?? matchingPayouts[0];
   if (!payout) {
     if (!slot.verificationStatus) slot.verificationStatus = "pending_review";
     payout = buildPayoutForSlot(wo, slot, generatePayoutId(payouts));

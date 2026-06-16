@@ -64,10 +64,18 @@ function ensurePayoutOnComplete(
   slot: WorkOrder["slots"][0]
 ) {
   if (!slot.mitraId || slot.status !== "completed") return;
-  const exists = store.payouts.find(
-    (p) => p.woId === wo.id && p.slotId === slot.id && p.status !== "rejected"
+  const existing = store.payouts.find(
+    (p) => p.woId === wo.id && p.slotId === slot.id && p.mitraId === slot.mitraId
   );
-  if (exists) return;
+  if (existing) {
+    // If the existing payout was rejected, reset it to pending for re-review
+    if (existing.status === "rejected") {
+      existing.status = "pending";
+      existing.verifiedAt = undefined;
+    }
+    // Already has a payout, nothing to do
+    return;
+  }
   slot.verificationStatus = "pending_review";
   store.payouts.unshift(
     buildPayoutForSlot(wo, slot, generatePayoutId(store.payouts))
@@ -348,9 +356,11 @@ export async function memoryVerifySlot(
     return { success: false as const, error: "Slot belum selesai dikerjakan" };
   }
 
-  let payout = store.payouts.find(
+  // Find the most relevant payout: prefer non-rejected, fallback to rejected
+  const matchingPayouts = store.payouts.filter(
     (p) => p.woId === woId && p.slotId === slot.id && p.mitraId === mitraId
   );
+  let payout = matchingPayouts.find((p) => p.status !== "rejected") ?? matchingPayouts[0];
   if (!payout) {
     if (!slot.verificationStatus) slot.verificationStatus = "pending_review";
     payout = buildPayoutForSlot(wo, slot, generatePayoutId(store.payouts));
