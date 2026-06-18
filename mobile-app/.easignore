@@ -1,0 +1,23 @@
+# Ignore node_modules (EAS installs deps on server)
+node_modules/
+
+# Android build folder (not needed, EAS generates fresh)
+android/
+
+# iOS build folder
+ios/
+
+# Expo cache
+.expo/
+
+# IDE
+.vscode/
+.idea/
+
+# Git
+.git/
+
+# Misc
+*.log
+*.md
+.claude/

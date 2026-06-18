@@ -56,7 +56,7 @@ export default function MyWorkScreen() {
       style={styles.container}
       data={workOrders}
       keyExtractor={(item) => item.id}
-      renderItem={({ item }) => <WOCard wo={item} />}
+      renderItem={({ item }) => <WOCard wo={item} mitraId={mitra?.id} />}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}

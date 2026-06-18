@@ -23,6 +23,7 @@ import { formatDate } from "@/lib/utils";
 import { fetchMyWorkOrders } from "@/lib/api";
 import type { WorkOrder } from "@/types";
 import { WOCard } from "@/components/WOCard";
+import { ScreenHeader } from "@/components/ScreenHeader";
 
 type Section = "main" | "edit-profile" | "change-password" | "detail-akun" | "wo-saya";
 
@@ -314,7 +315,7 @@ export default function AccountScreen() {
           <FlatList
             data={myWorkOrders}
             keyExtractor={(item) => item.id}
-            renderItem={({ item }) => <WOCard wo={item} />}
+            renderItem={({ item }) => <WOCard wo={item} mitraId={mitra?.id} />}
             refreshControl={
               <RefreshControl
                 refreshing={woRefreshing}
@@ -347,82 +348,76 @@ export default function AccountScreen() {
 
   // ── Main ──
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-      {/* Hero */}
-      <View style={styles.hero}>
-        <TouchableOpacity
-          style={styles.avatarWrap}
-          onPress={handlePickProfilePhoto}
-          activeOpacity={0.85}
-          disabled={photoUploading}
-        >
-          {photoUploading ? (
-            <ActivityIndicator color="#fff" size="large" />
-          ) : (mitra as unknown as Record<string, string>).profilePhotoUrl ? (
-            <Image
-              source={{ uri: (mitra as unknown as Record<string, string>).profilePhotoUrl }}
-              style={styles.avatarImage}
-            />
-          ) : (
-            <Text style={styles.avatarInitial}>{mitra.name.charAt(0).toUpperCase()}</Text>
-          )}
-          {/* Camera badge */}
-          <View style={styles.cameraBadge}>
-            <Ionicons name="camera" size={12} color="#fff" />
-          </View>
-        </TouchableOpacity>
-        <Text style={styles.heroName}>{mitra.name}</Text>
-        <View style={[styles.statusPill, { backgroundColor: statusColor(mitra.status) + "18" }]}>
-          <View style={[styles.statusDot, { backgroundColor: statusColor(mitra.status) }]} />
-          <Text style={[styles.statusPillText, { color: statusColor(mitra.status) }]}>
-            {statusLabel(mitra.status)}
-          </Text>
+    <View style={styles.container}>
+      <ScreenHeader title="Akun" />
+      <ScrollView showsVerticalScrollIndicator={false}>
+        {/* Hero with green bg */}
+        <View style={styles.heroBg}>
+          <TouchableOpacity
+            style={styles.avatarWrap}
+            onPress={handlePickProfilePhoto}
+            activeOpacity={0.85}
+            disabled={photoUploading}
+          >
+            {photoUploading ? (
+              <ActivityIndicator color="#fff" size="large" />
+            ) : (mitra as unknown as Record<string, string>).profilePhotoUrl ? (
+              <Image
+                source={{ uri: (mitra as unknown as Record<string, string>).profilePhotoUrl }}
+                style={styles.avatarImage}
+              />
+            ) : (
+              <Text style={styles.avatarInitial}>{mitra.name.charAt(0).toUpperCase()}</Text>
+            )}
+            <View style={styles.cameraBadge}>
+              <Ionicons name="camera" size={12} color="#fff" />
+            </View>
+          </TouchableOpacity>
         </View>
-      </View>
+        <View style={styles.heroInfo}>
+          <Text style={styles.heroName}>{mitra.name}</Text>
+          <View style={[styles.statusPill, { backgroundColor: statusColor(mitra.status) + "18" }]}>
+            <View style={[styles.statusDot, { backgroundColor: statusColor(mitra.status) }]} />
+            <Text style={[styles.statusPillText, { color: statusColor(mitra.status) }]}>
+              {statusLabel(mitra.status)}
+            </Text>
+          </View>
+        </View>
 
-      {/* Menu */}
-      <View style={styles.section}>
-        <MenuRow
-          iosIcon="id-card-outline"
-          androidIcon="id-card-outline"
-          label="Detail Akun"
-          desc="Email, HP, alamat, dan komisi"
-          onPress={openDetail}
-        />
-        <View style={styles.rowDivider} />
-        <MenuRow
-          iosIcon="briefcase-outline"
-          androidIcon="briefcase-outline"
-          label="WO Saya"
-          desc="Lihat pekerjaan yang sedang diambil"
-          onPress={openMyWork}
-        />
-        <View style={styles.rowDivider} />
-        <MenuRow
-          iosIcon="create-outline"
-          androidIcon="create-outline"
-          label="Ubah Profil"
-          desc="Nama, nomor HP, dan alamat"
-          onPress={() => { setName(mitra.name); setPhone(mitra.phone ?? ""); setAddress(mitra.address ?? ""); setSection("edit-profile"); }}
-        />
-        <View style={styles.rowDivider} />
-        <MenuRow
-          iosIcon="lock-closed-outline"
-          androidIcon="lock-closed-outline"
-          label="Ganti Kata Sandi"
-          desc="Perbarui password akun"
-          onPress={() => { setCurrentPw(""); setNewPw(""); setConfirmPw(""); setSection("change-password"); }}
-        />
-      </View>
+        {/* Stats Row */}
+        <View style={styles.statsCard}>
+          <View style={styles.statItem}>
+            <Text style={styles.statLabel}>Total Pekerjaan</Text>
+            <Text style={styles.statValue}>{mitra.completedWO}</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statItem}>
+            <Text style={styles.statLabel}>Rating Mitra</Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+              <Text style={[styles.statValue, { color: "#2e7d32" }]}>4.9</Text>
+              <Ionicons name="star" size={16} color="#2e7d32" />
+            </View>
+          </View>
+        </View>
 
-      {/* Logout */}
-      <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.8}>
-        <Ionicons name="log-out-outline" size={18} color="#c62828" />
-        <Text style={styles.logoutText}>Keluar dari Akun</Text>
-      </TouchableOpacity>
+        {/* Menu */}
+        <View style={styles.section}>
+          <MenuRow iosIcon="id-card-outline" androidIcon="id-card-outline" label="Detail Akun" desc="Email, HP, alamat, dan komisi" onPress={openDetail} />
+          <View style={styles.rowDivider} />
+          <MenuRow iosIcon="briefcase-outline" androidIcon="briefcase-outline" label="WO Saya" desc="Lihat pekerjaan yang sedang diambil" onPress={openMyWork} />
+          <View style={styles.rowDivider} />
+          <MenuRow iosIcon="create-outline" androidIcon="create-outline" label="Ubah Profil" desc="Nama, nomor HP, dan alamat" onPress={() => { setName(mitra.name); setPhone(mitra.phone ?? ""); setAddress(mitra.address ?? ""); setSection("edit-profile"); }} />
+          <View style={styles.rowDivider} />
+          <MenuRow iosIcon="lock-closed-outline" androidIcon="lock-closed-outline" label="Ganti Kata Sandi" desc="Perbarui password akun" onPress={() => { setCurrentPw(""); setNewPw(""); setConfirmPw(""); setSection("change-password"); }} />
+        </View>
 
-      <Text style={styles.version}>GO KLIRR CSO Mitra v1.0</Text>
-    </ScrollView>
+        <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.8}>
+          <Ionicons name="log-out-outline" size={18} color="#c62828" />
+          <Text style={styles.logoutText}>Keluar dari Akun</Text>
+        </TouchableOpacity>
+        <Text style={styles.version}>GO KLIRR CSO Mitra v1.0</Text>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -489,33 +484,34 @@ const styles = StyleSheet.create({
   subHeaderTitle: { fontSize: 17, fontWeight: "700", color: "#111" },
 
   // Hero
-  hero: {
-    backgroundColor: "#fff",
+  heroBg: {
+    backgroundColor: "#e8f5e9",
     alignItems: "center",
-    paddingTop: 60,
-    paddingBottom: 28,
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee",
+    paddingTop: 24,
+    paddingBottom: 50,
+  },
+  heroInfo: {
+    alignItems: "center",
+    marginTop: -28,
+    paddingBottom: 16,
+    backgroundColor: "#f4f7f4",
   },
   avatarWrap: {
-    width: 84,
-    height: 84,
-    borderRadius: 42,
+    width: 88,
+    height: 88,
+    borderRadius: 44,
     backgroundColor: "#2e7d32",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 14,
+    borderWidth: 4,
+    borderColor: "#fff",
     shadowColor: "#2e7d32",
     shadowOpacity: 0.3,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
     elevation: 6,
   },
-  avatarImage: {
-    width: 84,
-    height: 84,
-    borderRadius: 42,
-  },
+  avatarImage: { width: 80, height: 80, borderRadius: 40 },
   avatarInitial: { fontSize: 36, fontWeight: "800", color: "#fff" },
   cameraBadge: {
     position: "absolute",
@@ -530,18 +526,37 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "#fff",
   },
-  heroName: { fontSize: 19, fontWeight: "700", color: "#111", letterSpacing: 0.2 },
+  heroName: { fontSize: 19, fontWeight: "800", color: "#111", marginTop: 10 },
   statusPill: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    marginTop: 10,
+    marginTop: 8,
     paddingHorizontal: 14,
     paddingVertical: 5,
     borderRadius: 20,
   },
   statusDot: { width: 7, height: 7, borderRadius: 4 },
   statusPillText: { fontSize: 13, fontWeight: "600" },
+
+  // Stats
+  statsCard: {
+    flexDirection: "row",
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    marginHorizontal: 16,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: "#eef3ee",
+    shadowColor: "#000",
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  statItem: { flex: 1, alignItems: "center" },
+  statDivider: { width: 1, backgroundColor: "#eef3ee" },
+  statLabel: { fontSize: 12, color: "#888", marginBottom: 4 },
+  statValue: { fontSize: 22, fontWeight: "800", color: "#1a1a1a" },
 
   // Section card
   section: {

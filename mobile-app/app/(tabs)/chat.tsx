@@ -10,12 +10,12 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  Image,
 } from "react-native";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuthStore } from "@/stores/auth-store";
 import { API_URL } from "@/constants/config";
+import { ScreenHeader } from "@/components/ScreenHeader";
 
 // ── Types ──
 interface ChatMessage {
@@ -40,8 +40,6 @@ interface Contact {
   unreadCount: number;
 }
 
-type ChatView = "tabs" | "group" | "private-list" | "private-chat";
-
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     ...options,
@@ -52,7 +50,6 @@ async function api<T>(path: string, options?: RequestInit): Promise<T> {
 
 export default function ChatScreen() {
   const mitra = useAuthStore((s) => s.mitra);
-  const [view, setView] = useState<ChatView>("tabs");
   const [activeTab, setActiveTab] = useState<"group" | "private">("group");
 
   // Group chat state
@@ -228,7 +225,7 @@ export default function ChatScreen() {
   if (privatePeer) {
     return (
       <KeyboardAvoidingView
-        style={styles.container}
+        style={styles.wrapper}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         keyboardVerticalOffset={90}
       >
@@ -313,10 +310,19 @@ export default function ChatScreen() {
   // ── Main Chat View with Tabs ──
   return (
     <KeyboardAvoidingView
-      style={styles.container}
+      style={styles.wrapper}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={90}
     >
+      <ScreenHeader
+        title="Chat"
+        extraRight={
+          <TouchableOpacity style={styles.gearBtn} activeOpacity={0.7}>
+            <Ionicons name="settings-outline" size={20} color="#666" />
+          </TouchableOpacity>
+        }
+      />
+
       {/* Tab Switcher */}
       <View style={styles.tabBar}>
         <TouchableOpacity
@@ -325,7 +331,7 @@ export default function ChatScreen() {
         >
           <Ionicons
             name="people"
-            size={18}
+            size={16}
             color={activeTab === "group" ? "#2e7d32" : "#999"}
           />
           <Text style={[styles.tabText, activeTab === "group" && styles.tabTextActive]}>
@@ -338,7 +344,7 @@ export default function ChatScreen() {
         >
           <Ionicons
             name="chatbubble-ellipses"
-            size={18}
+            size={16}
             color={activeTab === "private" ? "#2e7d32" : "#999"}
           />
           <Text style={[styles.tabText, activeTab === "private" && styles.tabTextActive]}>
@@ -383,13 +389,25 @@ export default function ChatScreen() {
               onContentSizeChange={() => groupListRef.current?.scrollToEnd({ animated: false })}
               ListEmptyComponent={
                 <View style={styles.emptyChat}>
-                  <View style={styles.emptyChatIcon}>
-                    <Ionicons name="chatbubbles-outline" size={36} color="#ccc" />
+                  <View style={styles.emptyChatIconBig}>
+                    <Ionicons name="chatbubbles-outline" size={40} color="#2e7d32" />
                   </View>
                   <Text style={styles.emptyChatTitle}>Chat Umum</Text>
                   <Text style={styles.emptyChatText}>
                     Kirim pesan pertama untuk memulai diskusi dengan semua mitra dan admin.
                   </Text>
+
+                  {/* Quick Action Cards */}
+                  <View style={styles.quickActionsRow}>
+                    <View style={styles.quickActionCard}>
+                      <Ionicons name="bulb-outline" size={22} color="#2e7d32" />
+                      <Text style={styles.quickActionLabel}>TIPS KERJA</Text>
+                    </View>
+                    <View style={styles.quickActionCard}>
+                      <Ionicons name="megaphone-outline" size={22} color="#2e7d32" />
+                      <Text style={styles.quickActionLabel}>INFO TERBARU</Text>
+                    </View>
+                  </View>
                 </View>
               }
             />
@@ -480,8 +498,8 @@ export default function ChatScreen() {
               contentContainerStyle={contacts.length === 0 ? styles.emptyContainer : undefined}
               ListEmptyComponent={
                 <View style={styles.emptyChat}>
-                  <View style={styles.emptyChatIcon}>
-                    <Ionicons name="people-outline" size={36} color="#ccc" />
+                  <View style={styles.emptyChatIconBig}>
+                    <Ionicons name="people-outline" size={40} color="#2e7d32" />
                   </View>
                   <Text style={styles.emptyChatTitle}>Chat Pribadi</Text>
                   <Text style={styles.emptyChatText}>
@@ -498,14 +516,17 @@ export default function ChatScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f4f7f4" },
+  wrapper: { flex: 1, backgroundColor: "#f4f7f4" },
+
+  // Gear button
+  gearBtn: { padding: 4 },
 
   // Tab bar
   tabBar: {
     flexDirection: "row",
     backgroundColor: "#fff",
     borderBottomWidth: 1,
-    borderBottomColor: "#eee",
+    borderBottomColor: "#eef3ee",
   },
   tab: {
     flex: 1,
@@ -513,7 +534,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
-    paddingVertical: 13,
+    paddingVertical: 14,
     borderBottomWidth: 2,
     borderBottomColor: "transparent",
   },
@@ -527,9 +548,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "#fff",
     paddingHorizontal: 12,
-    paddingVertical: 12,
+    paddingTop: 54,
+    paddingBottom: 14,
     borderBottomWidth: 1,
-    borderBottomColor: "#eee",
+    borderBottomColor: "#eef3ee",
     gap: 10,
   },
   chatBackBtn: { padding: 4 },
@@ -596,7 +618,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderTopWidth: 1,
-    borderTopColor: "#eee",
+    borderTopColor: "#eef3ee",
     gap: 8,
   },
   inputField: {
@@ -681,15 +703,39 @@ const styles = StyleSheet.create({
   loadingWrap: { flex: 1, justifyContent: "center", alignItems: "center" },
   emptyContainer: { flexGrow: 1, justifyContent: "center" },
   emptyChat: { alignItems: "center", padding: 32 },
-  emptyChatIcon: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: "#f0f4f0",
+  emptyChatIconBig: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    backgroundColor: "#e8f5e9",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 16,
+    marginBottom: 20,
   },
-  emptyChatTitle: { fontSize: 16, fontWeight: "700", color: "#333", marginBottom: 8 },
+  emptyChatTitle: { fontSize: 17, fontWeight: "700", color: "#1a1a1a", marginBottom: 8 },
   emptyChatText: { color: "#888", textAlign: "center", lineHeight: 20, paddingHorizontal: 16 },
+
+  // Quick actions
+  quickActionsRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 24,
+    width: "100%",
+  },
+  quickActionCard: {
+    flex: 1,
+    backgroundColor: "#fff",
+    borderRadius: 14,
+    padding: 16,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#eef3ee",
+    gap: 8,
+  },
+  quickActionLabel: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#666",
+    letterSpacing: 0.5,
+  },
 });
