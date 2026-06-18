@@ -263,6 +263,25 @@ export async function supabaseChangeMitraPassword(
   return { success: true as const };
 }
 
+export async function supabaseAdminResetMitraPassword(
+  id: string,
+  newPassword: string
+) {
+  const { data, error } = await db()
+    .from("mitra")
+    .select("id")
+    .eq("id", id)
+    .maybeSingle();
+  if (error || !data)
+    return { success: false as const, error: "Mitra tidak ditemukan" };
+  const { error: updErr } = await db()
+    .from("mitra")
+    .update({ password: newPassword })
+    .eq("id", id);
+  if (updErr) return { success: false as const, error: updErr.message };
+  return { success: true as const };
+}
+
 export async function supabaseDeleteWorkOrder(id: string) {
   const { error } = await db().from("work_orders").delete().eq("id", id);
   if (error) return { success: false as const, error: error.message };

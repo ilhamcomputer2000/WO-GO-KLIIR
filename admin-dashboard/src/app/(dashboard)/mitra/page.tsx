@@ -7,12 +7,15 @@ import {
   Ban,
   Trash2,
   Eye,
+  EyeOff,
   MoreHorizontal,
   Pencil,
   Save,
   Loader2,
+  KeyRound,
 } from "lucide-react";
 import { toast } from "sonner";
+import { apiAdminResetMitraPassword } from "@/lib/api-client";
 import { DashboardHeader } from "@/components/layout/dashboard-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -77,6 +80,10 @@ export default function MitraPage() {
   const [editTarget, setEditTarget] = useState<Mitra | null>(null);
   const [editForm, setEditForm] = useState<Record<string, string>>({});
   const [editLoading, setEditLoading] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [passwordLoading, setPasswordLoading] = useState(false);
 
   const filterMitra = (list: Mitra[]) => {
     const q = search.toLowerCase();
@@ -161,6 +168,9 @@ export default function MitraPage() {
       bankAccountName: ext.bankAccountName || "",
     });
     setEditTarget(m);
+    setNewPassword("");
+    setConfirmPassword("");
+    setShowPassword(false);
   };
 
   const handleEditSave = async () => {
@@ -174,6 +184,30 @@ export default function MitraPage() {
       toast.error("Gagal menyimpan perubahan");
     } finally {
       setEditLoading(false);
+    }
+  };
+
+  const handlePasswordReset = async () => {
+    if (!editTarget) return;
+    if (newPassword.length < 6) {
+      toast.error("Password minimal 6 karakter");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error("Konfirmasi password tidak cocok");
+      return;
+    }
+    setPasswordLoading(true);
+    try {
+      await apiAdminResetMitraPassword(editTarget.id, newPassword);
+      toast.success(`Password ${editTarget.name} berhasil diubah`);
+      setNewPassword("");
+      setConfirmPassword("");
+      setShowPassword(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Gagal mengubah password");
+    } finally {
+      setPasswordLoading(false);
     }
   };
 
@@ -628,6 +662,73 @@ export default function MitraPage() {
                       value={editForm.bankAccountName ?? ""}
                       onChange={(e) => setEditForm((f) => ({ ...f, bankAccountName: e.target.value }))}
                     />
+                  </div>
+                </div>
+              </div>
+
+              {/* Ganti Password */}
+              <div>
+                <h4 className="text-sm font-semibold text-foreground mb-3 border-b pb-1 flex items-center gap-2">
+                  <KeyRound className="h-4 w-4 text-amber-600" />
+                  Ganti Password
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="edit-newPassword">Password Baru</Label>
+                    <div className="relative">
+                      <Input
+                        id="edit-newPassword"
+                        type={showPassword ? "text" : "password"}
+                        placeholder="Minimal 6 karakter"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                      />
+                      <button
+                        type="button"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        onClick={() => setShowPassword((v) => !v)}
+                        tabIndex={-1}
+                      >
+                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="edit-confirmPassword">Konfirmasi Password</Label>
+                    <Input
+                      id="edit-confirmPassword"
+                      type={showPassword ? "text" : "password"}
+                      placeholder="Ulangi password baru"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                    />
+                  </div>
+                  <div className="md:col-span-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full border-amber-200 text-amber-700 hover:bg-amber-50 hover:text-amber-800"
+                      disabled={!newPassword || !confirmPassword || passwordLoading}
+                      onClick={handlePasswordReset}
+                    >
+                      {passwordLoading ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Menyimpan...
+                        </>
+                      ) : (
+                        <>
+                          <KeyRound className="mr-2 h-4 w-4" />
+                          Simpan Password Baru
+                        </>
+                      )}
+                    </Button>
+                    {newPassword && confirmPassword && newPassword !== confirmPassword && (
+                      <p className="text-xs text-red-500 mt-1">Password tidak cocok</p>
+                    )}
+                    {newPassword && newPassword.length > 0 && newPassword.length < 6 && (
+                      <p className="text-xs text-red-500 mt-1">Password minimal 6 karakter</p>
+                    )}
                   </div>
                 </div>
               </div>

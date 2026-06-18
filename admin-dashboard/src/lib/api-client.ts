@@ -49,6 +49,13 @@ export async function apiDeleteMitra(id: string) {
   return request<{ message: string }>(`/api/mitra/${id}`, { method: "DELETE" });
 }
 
+export async function apiAdminResetMitraPassword(id: string, newPassword: string) {
+  return request<{ message: string }>(`/api/mitra/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ newPassword }),
+  });
+}
+
 export async function apiAddWorkOrder(
   wo: Omit<WorkOrder, "id" | "createdAt" | "progress">
 ) {

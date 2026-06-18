@@ -62,6 +62,15 @@ export async function changeMitraPassword(
     : memory.memoryChangeMitraPassword(id, currentPassword, newPassword);
 }
 
+export async function adminResetMitraPassword(
+  id: string,
+  newPassword: string
+) {
+  return useDb()
+    ? supabase.supabaseAdminResetMitraPassword(id, newPassword)
+    : memory.memoryAdminResetMitraPassword(id, newPassword);
+}
+
 export async function registerMitra(data: {
   name: string; email: string; password: string; phone: string;
   address: string; religion: string; birthPlace: string; birthDate: string;

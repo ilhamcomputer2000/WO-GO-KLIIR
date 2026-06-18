@@ -153,6 +153,17 @@ export async function memoryChangeMitraPassword(
   return { success: true as const };
 }
 
+export async function memoryAdminResetMitraPassword(
+  id: string,
+  newPassword: string
+) {
+  const store = getStore();
+  const row = store.mitra.find((m) => m.id === id);
+  if (!row) return { success: false as const, error: "Mitra tidak ditemukan" };
+  (row as unknown as Record<string, string>).password = newPassword;
+  return { success: true as const };
+}
+
 export async function memoryDeleteWorkOrder(id: string) {
   const store = getStore();
   const idx = store.workOrders.findIndex((wo) => wo.id === id);

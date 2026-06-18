@@ -1,6 +1,6 @@
 export const dynamic = 'force-dynamic';
 import { NextResponse } from "next/server";
-import { deleteMitra, getMitraById, updateMitraProfile, updateMitraStatus } from "@/lib/store";
+import { adminResetMitraPassword, deleteMitra, getMitraById, updateMitraProfile, updateMitraStatus } from "@/lib/store";
 import type { MitraStatus } from "@/types";
 
 export async function GET(
@@ -28,6 +28,21 @@ export async function PATCH(
     if (!result.success)
       return NextResponse.json({ error: result.error }, { status: 404 });
     return NextResponse.json({ mitra: result.mitra });
+  }
+
+  // Admin reset password
+  if (body.newPassword) {
+    const { newPassword } = body as { newPassword: string };
+    if (newPassword.length < 6) {
+      return NextResponse.json(
+        { error: "Password minimal 6 karakter" },
+        { status: 400 }
+      );
+    }
+    const result = await adminResetMitraPassword(id, newPassword);
+    if (!result.success)
+      return NextResponse.json({ error: result.error }, { status: 404 });
+    return NextResponse.json({ message: "Password berhasil diubah" });
   }
 
   // Update profile (admin or mitra)
