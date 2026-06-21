@@ -4,8 +4,7 @@ const nextConfig: NextConfig = {
   // Disable browser source maps to reduce memory usage
   productionBrowserSourceMaps: false,
 
-  // Skip lint & type-check during build (saves memory on Vercel Hobby)
-  eslint: { ignoreDuringBuilds: true },
+  // Skip TypeScript errors during build (saves memory on Vercel Hobby)
   typescript: { ignoreBuildErrors: true },
 
   // Experimental memory optimizations
@@ -13,7 +12,10 @@ const nextConfig: NextConfig = {
     webpackMemoryOptimizations: true,
   },
 
-  // Reduce devtool overhead in development
+  // Turbopack config (Next.js 16 default bundler)
+  turbopack: {},
+
+  // Reduce devtool overhead in development (webpack fallback)
   webpack: (config, { dev }) => {
     if (dev) {
       config.devtool = "eval";
