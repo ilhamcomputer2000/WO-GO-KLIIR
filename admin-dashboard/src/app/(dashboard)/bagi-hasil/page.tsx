@@ -1,6 +1,9 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useMemo, useState } from "react";
+import { PaginationControls, paginateArray } from "@/components/ui/pagination-controls";
+import { ExcelDownloadButton, filterByPeriod, getPeriodLabel } from "@/components/ui/excel-download-button";
+import { exportToExcel } from "@/lib/excel-export";
 import {
   Search,
   CheckCircle,
@@ -57,6 +60,9 @@ export default function BagiHasilPage() {
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const fileRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [activePayoutTab, setActivePayoutTab] = useState("pending");
 
   const filtered = payouts.filter((p) => {
     const matchSearch =
@@ -226,12 +232,12 @@ export default function BagiHasilPage() {
               placeholder="Cari ID WO, mitra, judul..."
               className="pl-9"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
             />
           </div>
           <Select
             value={mitraFilter}
-            onValueChange={(v) => v && setMitraFilter(v)}
+            onValueChange={(v) => { if (v) { setMitraFilter(v); setCurrentPage(1); } }}
           >
             <SelectTrigger className="w-full sm:w-48">
               <SelectValue placeholder="Semua Mitra" />
@@ -245,6 +251,30 @@ export default function BagiHasilPage() {
               ))}
             </SelectContent>
           </Select>
+          <ExcelDownloadButton
+            label="Download Excel"
+            onDownload={(start, end) => {
+              const data = filterByPeriod(filtered, "createdAt", start, end);
+              exportToExcel({
+                title: "Bagi Hasil per WO",
+                subtitle: `${data.length} record payout`,
+                periodLabel: getPeriodLabel(start, end),
+                filename: `bagi_hasil_${new Date().toISOString().split("T")[0]}`,
+                columns: [
+                  { header: "ID Payout", key: "id", width: 14 },
+                  { header: "ID WO", key: "woId", width: 16 },
+                  { header: "Judul WO", key: "woTitle", width: 28 },
+                  { header: "Nama Mitra", key: "mitraName", width: 22 },
+                  { header: "Komisi", key: "amount", width: 16, format: (v) => formatCurrency(v as number) },
+                  { header: "Status", key: "status", width: 20, format: (v) => getPayoutStatusLabel(v as import("@/types").PayoutStatus) },
+                  { header: "Tgl Dibuat", key: "createdAt", width: 14 },
+                  { header: "Tgl Verifikasi", key: "verifiedAt", width: 14 },
+                  { header: "Tgl Dibayar", key: "paidAt", width: 14 },
+                ],
+                data: data as unknown as Record<string, unknown>[],
+              });
+            }}
+          />
         </div>
 
         {/* Tabs per status */}
@@ -253,7 +283,7 @@ export default function BagiHasilPage() {
             <CardTitle className="text-base">Distribusi Komisi Mitra</CardTitle>
           </CardHeader>
           <CardContent>
-            <Tabs defaultValue="pending">
+            <Tabs value={activePayoutTab} onValueChange={(v) => { if (v) { setActivePayoutTab(v); setCurrentPage(1); } }}>
               <TabsList className="mb-4">
                 <TabsTrigger value="pending" className="gap-1">
                   <Clock className="h-3.5 w-3.5" />
@@ -291,6 +321,7 @@ export default function BagiHasilPage() {
                       : tab === "approved"
                         ? approvedList
                         : paidList;
+                const paginatedRows = tab === activePayoutTab ? paginateArray(rows, currentPage, pageSize) : rows;
                 return (
                   <TabsContent key={tab} value={tab}>
                     <Table>
@@ -322,10 +353,20 @@ export default function BagiHasilPage() {
                             </TableCell>
                           </TableRow>
                         ) : (
-                          rows.map((p) => <PayoutRow key={p.id} p={p} />)
+                          paginatedRows.map((p) => <PayoutRow key={p.id} p={p} />)
                         )}
                       </TableBody>
                     </Table>
+                    {tab === activePayoutTab && (
+                      <PaginationControls
+                        totalItems={rows.length}
+                        currentPage={currentPage}
+                        pageSize={pageSize}
+                        onPageChange={setCurrentPage}
+                        onPageSizeChange={setPageSize}
+                        itemLabel="payout"
+                      />
+                    )}
                   </TabsContent>
                 );
               })}

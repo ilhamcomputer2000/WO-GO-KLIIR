@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
-import { Search, Download, Receipt, Filter } from "lucide-react";
-import { toast } from "sonner";
+import { useMemo, useState } from "react";
+import { PaginationControls, paginateArray } from "@/components/ui/pagination-controls";
+import { ExcelDownloadButton, filterByPeriod, getPeriodLabel } from "@/components/ui/excel-download-button";
+import { exportToExcel } from "@/lib/excel-export";
+import { Search, Receipt, Filter } from "lucide-react";
+
 import { format } from "date-fns";
 import { id as localeId } from "date-fns/locale";
 import { DashboardHeader } from "@/components/layout/dashboard-header";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -39,6 +41,8 @@ export default function BuktiSaldoPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [mitraFilter, setMitraFilter] = useState("all");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const filtered = payouts.filter((p) => {
     const matchSearch =
@@ -52,23 +56,28 @@ export default function BuktiSaldoPage() {
 
   const totalAmount = filtered.reduce((s, p) => s + p.amount, 0);
   const paidCount = filtered.filter((p) => p.status === "paid").length;
+  const paginatedData = useMemo(() => paginateArray(filtered, currentPage, pageSize), [filtered, currentPage, pageSize]);
 
-  const handleExport = () => {
-    const header = "ID,WO ID,Judul WO,Mitra,Jumlah,Status,Tanggal Dibuat,Tanggal Dibayar\n";
-    const rows = filtered
-      .map(
-        (p) =>
-          `${p.id},${p.woId},"${p.woTitle}",${p.mitraName},${p.amount},${p.status},${p.createdAt},${p.paidAt ?? ""}`
-      )
-      .join("\n");
-    const blob = new Blob([header + rows], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `bukti_bagi_hasil_${format(new Date(), "yyyy-MM-dd")}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success("File bukti bagi hasil berhasil diunduh");
+  const handleExcelDownload = (startDate: string, endDate: string) => {
+    const data = filterByPeriod(filtered, "createdAt", startDate, endDate);
+    exportToExcel({
+      title: "Bukti Bagi Hasil Saldo",
+      subtitle: `${data.length} record bukti bagi hasil`,
+      periodLabel: getPeriodLabel(startDate, endDate),
+      filename: `bukti_bagi_hasil_${new Date().toISOString().split("T")[0]}`,
+      columns: [
+        { header: "ID Bukti", key: "id", width: 14 },
+        { header: "ID WO", key: "woId", width: 16 },
+        { header: "Judul WO", key: "woTitle", width: 28 },
+        { header: "Nama Mitra", key: "mitraName", width: 22 },
+        { header: "Jumlah", key: "amount", width: 16, format: (v) => formatCurrency(v as number) },
+        { header: "Status", key: "status", width: 16, format: (v) => getPayoutStatusLabel(v as import("@/types").PayoutStatus) },
+        { header: "Tgl Dibuat", key: "createdAt", width: 14 },
+        { header: "Tgl Dibayar", key: "paidAt", width: 14 },
+        { header: "Bukti Transfer", key: "transferProofUrl", width: 20, format: (v) => v ? "Ada" : "—" },
+      ],
+      data: data as unknown as Record<string, unknown>[],
+    });
   };
 
   const statusColor = (status: string) => {
@@ -119,10 +128,10 @@ export default function BuktiSaldoPage() {
                     placeholder="Cari..."
                     className="pl-9 w-48"
                     value={search}
-                    onChange={(e) => setSearch(e.target.value)}
+                    onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
                   />
                 </div>
-                <Select value={statusFilter} onValueChange={(v) => v && setStatusFilter(v)}>
+                <Select value={statusFilter} onValueChange={(v) => { if (v) { setStatusFilter(v); setCurrentPage(1); } }}>
                   <SelectTrigger className="w-36">
                     <Filter className="mr-2 h-3 w-3" />
                     <SelectValue />
@@ -134,7 +143,7 @@ export default function BuktiSaldoPage() {
                     <SelectItem value="paid">Dibayar</SelectItem>
                   </SelectContent>
                 </Select>
-                <Select value={mitraFilter} onValueChange={(v) => v && setMitraFilter(v)}>
+                <Select value={mitraFilter} onValueChange={(v) => { if (v) { setMitraFilter(v); setCurrentPage(1); } }}>
                   <SelectTrigger className="w-44">
                     <SelectValue placeholder="Semua Mitra" />
                   </SelectTrigger>
@@ -147,10 +156,10 @@ export default function BuktiSaldoPage() {
                     ))}
                   </SelectContent>
                 </Select>
-                <Button variant="outline" onClick={handleExport}>
-                  <Download className="mr-2 h-4 w-4" />
-                  Export CSV
-                </Button>
+                <ExcelDownloadButton
+                  label="Download Excel"
+                  onDownload={handleExcelDownload}
+                />
               </div>
             </div>
           </CardHeader>
@@ -177,7 +186,7 @@ export default function BuktiSaldoPage() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filtered.map((p) => (
+                  paginatedData.map((p) => (
                     <TableRow key={p.id}>
                       <TableCell className="font-mono text-xs">{p.id}</TableCell>
                       <TableCell className="font-mono text-xs">{p.woId}</TableCell>
@@ -216,6 +225,14 @@ export default function BuktiSaldoPage() {
                 )}
               </TableBody>
             </Table>
+            <PaginationControls
+              totalItems={filtered.length}
+              currentPage={currentPage}
+              pageSize={pageSize}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={setPageSize}
+              itemLabel="record"
+            />
           </CardContent>
         </Card>
       </div>

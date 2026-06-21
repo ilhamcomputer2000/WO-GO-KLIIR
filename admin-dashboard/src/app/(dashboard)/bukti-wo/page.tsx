@@ -1,6 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
+import { PaginationControls, paginateArray } from "@/components/ui/pagination-controls";
+import { ExcelDownloadButton, filterByPeriod, getPeriodLabel } from "@/components/ui/excel-download-button";
+import { exportToExcel } from "@/lib/excel-export";
 import { Search, Camera, Filter, CheckCircle, XCircle, AlertCircle, Info, ImageIcon, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { DashboardHeader } from "@/components/layout/dashboard-header";
@@ -68,6 +71,8 @@ export default function BuktiWoPage() {
   const [reviewFilter, setReviewFilter] = useState("all");
   const [selectedSlotKey, setSelectedSlotKey] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(12);
 
   // Reject dialog state
   const [rejectTarget, setRejectTarget] = useState<(typeof slotGroups)[0] | null>(null);
@@ -252,9 +257,9 @@ export default function BuktiWoPage() {
           <CardContent className="flex flex-col sm:flex-row gap-3">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Cari WO, judul, atau nama mitra..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+              <Input placeholder="Cari WO, judul, atau nama mitra..." value={search} onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }} className="pl-9" />
             </div>
-            <Select value={reviewFilter} onValueChange={(v) => setReviewFilter(v ?? "all")}>
+            <Select value={reviewFilter} onValueChange={(v) => { setReviewFilter(v ?? "all"); setCurrentPage(1); }}>
               <SelectTrigger className="w-full sm:w-44"><SelectValue placeholder="Status review" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Semua Review</SelectItem>
@@ -263,20 +268,65 @@ export default function BuktiWoPage() {
                 <SelectItem value="rejected">Ditolak</SelectItem>
               </SelectContent>
             </Select>
-            <Select value={woFilter} onValueChange={(v) => setWoFilter(v ?? "all")}>
+            <Select value={woFilter} onValueChange={(v) => { setWoFilter(v ?? "all"); setCurrentPage(1); }}>
               <SelectTrigger className="w-full sm:w-44"><SelectValue placeholder="Semua WO" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Semua WO</SelectItem>
                 {workOrders.map((wo) => <SelectItem key={wo.id} value={wo.id}>{wo.id}</SelectItem>)}
               </SelectContent>
             </Select>
-            <Select value={mitraFilter} onValueChange={(v) => setMitraFilter(v ?? "all")}>
+            <Select value={mitraFilter} onValueChange={(v) => { setMitraFilter(v ?? "all"); setCurrentPage(1); }}>
               <SelectTrigger className="w-full sm:w-44"><SelectValue placeholder="Semua Mitra" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Semua Mitra</SelectItem>
                 {mitra.map((m) => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}
               </SelectContent>
             </Select>
+            <ExcelDownloadButton
+              label="Download Excel"
+              onDownload={(start, end) => {
+                const exportData = filtered.map((g) => {
+                  const proof = g.before ?? g.after;
+                  return {
+                    woId: g.woId,
+                    woTitle: proof?.woTitle ?? "",
+                    slotId: g.slotId,
+                    mitraName: proof?.mitraName ?? "",
+                    beforePhoto: g.before ? "Ada" : "Belum",
+                    afterPhoto: g.after ? "Ada" : "Belum",
+                    verificationStatus: g.vStatus === "approved" ? "Disetujui" : g.vStatus === "rejected" ? "Ditolak" : "Menunggu Review",
+                    payoutStatus: g.payout ? g.payout.status : "—",
+                    uploadedAt: g.before?.uploadedAt ?? g.after?.uploadedAt ?? "",
+                  };
+                });
+                const periodData = start || end
+                  ? exportData.filter((d) => {
+                      if (!d.uploadedAt) return false;
+                      const dt = String(d.uploadedAt).slice(0, 10);
+                      if (start && dt < start) return false;
+                      if (end && dt > end) return false;
+                      return true;
+                    })
+                  : exportData;
+                exportToExcel({
+                  title: "Bukti Penyelesaian WO",
+                  subtitle: `${periodData.length} bukti penyelesaian`,
+                  periodLabel: getPeriodLabel(start, end),
+                  filename: `bukti_wo_${new Date().toISOString().split("T")[0]}`,
+                  columns: [
+                    { header: "ID WO", key: "woId", width: 16 },
+                    { header: "Judul WO", key: "woTitle", width: 28 },
+                    { header: "Slot", key: "slotId", width: 12 },
+                    { header: "Nama Mitra", key: "mitraName", width: 22 },
+                    { header: "Foto Sebelum", key: "beforePhoto", width: 14 },
+                    { header: "Foto Setelah", key: "afterPhoto", width: 14 },
+                    { header: "Status Verifikasi", key: "verificationStatus", width: 18 },
+                    { header: "Status Payout", key: "payoutStatus", width: 16 },
+                  ],
+                  data: periodData as unknown as Record<string, unknown>[],
+                });
+              }}
+            />
           </CardContent>
         </Card>
 
@@ -284,8 +334,9 @@ export default function BuktiWoPage() {
         {filtered.length === 0 ? (
           <Card><CardContent className="py-16 text-center text-muted-foreground">Belum ada bukti penyelesaian.</CardContent></Card>
         ) : (
+          <>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {filtered.map((group) => {
+            {paginateArray(filtered, currentPage, pageSize).map((group) => {
               const label = group.before?.mitraName ?? group.after?.mitraName ?? "";
               const woTitle = group.before?.woTitle ?? group.after?.woTitle ?? "";
               return (
@@ -307,7 +358,6 @@ export default function BuktiWoPage() {
                   <CardContent className="p-3 space-y-2">
                     <div className="flex items-center justify-between gap-2">
                       <Badge variant="outline" className="font-mono text-xs">{group.woId}</Badge>
-                      {/* If rejected but after photo now exists → treat as pending_review (re-uploaded) */}
                       {verificationBadge(
                         group.vStatus === "rejected" && group.after
                           ? "pending_review"
@@ -318,8 +368,6 @@ export default function BuktiWoPage() {
                     <p className="text-xs text-muted-foreground">{label}</p>
                     {group.payout && <Badge variant="outline" className="text-[10px]">{getPayoutStatusLabel(group.payout.status)}</Badge>}
 
-                    {/* Action buttons on card */}
-                    {/* Show when: pending_review, no status yet, OR both photos exist (after re-upload) */}
                     {group.after && group.vStatus !== "approved" && (
                       <div className="flex gap-2 pt-1">
                         <Button size="sm" className="flex-1 h-8" disabled={processing}
@@ -356,6 +404,15 @@ export default function BuktiWoPage() {
               );
             })}
           </div>
+          <PaginationControls
+            totalItems={filtered.length}
+            currentPage={currentPage}
+            pageSize={pageSize}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={setPageSize}
+            itemLabel="bukti"
+          />
+          </>
         )}
       </div>
 

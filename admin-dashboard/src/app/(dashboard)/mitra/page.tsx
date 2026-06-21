@@ -1,6 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
+import { PaginationControls, paginateArray } from "@/components/ui/pagination-controls";
+import { ExcelDownloadButton, filterByPeriod, getPeriodLabel } from "@/components/ui/excel-download-button";
+import { exportToExcel } from "@/lib/excel-export";
 import {
   Search,
   CheckCircle,
@@ -74,6 +77,8 @@ export default function MitraPage() {
   const [deleteTarget, setDeleteTarget] = useState<Mitra | null>(null);
   const [activeTab, setActiveTab] = useState("all");
   const [ktpPreviewUrl, setKtpPreviewUrl] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [rejectTarget, setRejectTarget] = useState<Mitra | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [rejectLoading, setRejectLoading] = useState(false);
@@ -99,6 +104,18 @@ export default function MitraPage() {
   const pending = filterMitra(mitra.filter((m) => m.status === "pending"));
   const active = filterMitra(mitra.filter((m) => m.status === "active"));
   const suspended = filterMitra(mitra.filter((m) => m.status === "suspended"));
+
+  // Get current tab's data
+  const currentTabData = useMemo(() => {
+    switch (activeTab) {
+      case "pending": return pending;
+      case "active": return active;
+      case "suspended": return suspended;
+      default: return filtered;
+    }
+  }, [activeTab, filtered, pending, active, suspended]);
+
+  const paginatedData = useMemo(() => paginateArray(currentTabData, currentPage, pageSize), [currentTabData, currentPage, pageSize]);
 
   const handleApprove = async (m: Mitra) => {
     await updateMitraStatus(m.id, "active");
@@ -330,12 +347,36 @@ export default function MitraPage() {
               placeholder="Cari nama, email, atau ID mitra..."
               className="pl-9"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
             />
           </div>
+          <ExcelDownloadButton
+            label="Download Excel"
+            onDownload={(start, end) => {
+              const data = filterByPeriod(currentTabData, "registeredAt", start, end);
+              exportToExcel({
+                title: "Manajemen Mitra",
+                subtitle: `Tab: ${activeTab === "all" ? "Semua" : activeTab === "pending" ? "Menunggu ACC" : activeTab === "active" ? "Aktif" : "Suspend"} — ${data.length} mitra`,
+                periodLabel: getPeriodLabel(start, end),
+                filename: `mitra_${activeTab}_${new Date().toISOString().split("T")[0]}`,
+                columns: [
+                  { header: "ID", key: "id", width: 16 },
+                  { header: "Nama", key: "name", width: 22 },
+                  { header: "Email", key: "email", width: 24 },
+                  { header: "Telepon", key: "phone", width: 16 },
+                  { header: "Status", key: "status", width: 14, format: (v) => getMitraStatusLabel(v as import("@/types").MitraStatus) },
+                  { header: "Alamat", key: "address", width: 28 },
+                  { header: "Tgl Daftar", key: "registeredAt", width: 14 },
+                  { header: "WO Selesai", key: "completedWO", width: 12 },
+                  { header: "Total Komisi", key: "totalCommission", width: 18, format: (v) => formatCurrency(v as number) },
+                ],
+                data: data as unknown as Record<string, unknown>[],
+              });
+            }}
+          />
         </div>
 
-        <Tabs value={activeTab} onValueChange={(v) => v && setActiveTab(v)}>
+        <Tabs value={activeTab} onValueChange={(v) => { if (v) { setActiveTab(v); setCurrentPage(1); } }}>
           <TabsList>
             <TabsTrigger value="all">Semua ({filtered.length})</TabsTrigger>
             <TabsTrigger value="pending">
@@ -347,18 +388,26 @@ export default function MitraPage() {
             </TabsTrigger>
           </TabsList>
           <TabsContent value="all" className="mt-4">
-            <MitraTable data={filtered} />
+            <MitraTable data={paginatedData} />
           </TabsContent>
           <TabsContent value="pending" className="mt-4">
-            <MitraTable data={pending} />
+            <MitraTable data={paginatedData} />
           </TabsContent>
           <TabsContent value="active" className="mt-4">
-            <MitraTable data={active} />
+            <MitraTable data={paginatedData} />
           </TabsContent>
           <TabsContent value="suspended" className="mt-4">
-            <MitraTable data={suspended} />
+            <MitraTable data={paginatedData} />
           </TabsContent>
         </Tabs>
+        <PaginationControls
+          totalItems={currentTabData.length}
+          currentPage={currentPage}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
+          itemLabel="mitra"
+        />
       </div>
 
       <Dialog open={!!selectedMitra} onOpenChange={() => setSelectedMitra(null)}>

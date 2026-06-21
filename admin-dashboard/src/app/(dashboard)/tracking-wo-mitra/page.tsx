@@ -1,6 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { PaginationControls, paginateArray } from "@/components/ui/pagination-controls";
+import { ExcelDownloadButton, filterByPeriod, getPeriodLabel } from "@/components/ui/excel-download-button";
+import { exportToExcel } from "@/lib/excel-export";
 import {
   Search, CalendarDays, List, MapPin, Users, Camera,
   Filter, Pencil, Trash2, Save, X,
@@ -66,6 +69,8 @@ export default function TrackingWoMitraPage() {
   const [editTarget, setEditTarget] = useState<WorkOrder | null>(null);
   const [editForm, setEditForm] = useState<Partial<WorkOrder>>({});
   const [editLoading, setEditLoading] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const filtered = useMemo(() => workOrders.filter((wo) => {
     const q = search.toLowerCase();
@@ -77,6 +82,8 @@ export default function TrackingWoMitraPage() {
       (mitraFilter === "all" || wo.slots.some((s) => s.mitraId === mitraFilter))
     );
   }), [workOrders, search, statusFilter, mitraFilter]);
+
+  const paginatedFiltered = useMemo(() => paginateArray(filtered, currentPage, pageSize), [filtered, currentPage, pageSize]);
 
   const stats = useMemo(() => ({
     total: filtered.length,
@@ -143,9 +150,9 @@ export default function TrackingWoMitraPage() {
             <div className="flex flex-col sm:flex-row gap-3">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input placeholder="Cari ID, judul, lokasi, kategori, atau nama mitra..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+                <Input placeholder="Cari ID, judul, lokasi, kategori, atau nama mitra..." value={search} onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }} className="pl-9" />
               </div>
-              <Select value={mitraFilter} onValueChange={(v) => setMitraFilter(v ?? "all")}>
+              <Select value={mitraFilter} onValueChange={(v) => { setMitraFilter(v ?? "all"); setCurrentPage(1); }}>
                 <SelectTrigger className="w-full sm:w-52"><SelectValue placeholder="Semua Mitra" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Semua Mitra</SelectItem>
@@ -153,7 +160,7 @@ export default function TrackingWoMitraPage() {
                 </SelectContent>
               </Select>
             </div>
-            <Tabs value={statusFilter} onValueChange={(v) => v && setStatusFilter(v)}>
+            <Tabs value={statusFilter} onValueChange={(v) => { if (v) { setStatusFilter(v); setCurrentPage(1); } }}>
               <TabsList>
                 {STATUS_TABS.map((tab) => {
                   const count = tab.value === "all" ? workOrders.length
@@ -169,8 +176,38 @@ export default function TrackingWoMitraPage() {
         {/* List */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Daftar Work Order</CardTitle>
-            <CardDescription>{filtered.length} WO — kalender & tabel tracking mitra</CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-base">Daftar Work Order</CardTitle>
+                <CardDescription>{filtered.length} WO — kalender & tabel tracking mitra</CardDescription>
+              </div>
+              <ExcelDownloadButton
+                label="Download Excel"
+                onDownload={(start, end) => {
+                  const data = filterByPeriod(filtered, "workDate", start, end);
+                  exportToExcel({
+                    title: "Tracking WO Mitra",
+                    subtitle: `${data.length} Work Order`,
+                    periodLabel: getPeriodLabel(start, end),
+                    filename: `tracking_wo_${new Date().toISOString().split("T")[0]}`,
+                    columns: [
+                      { header: "ID WO", key: "id", width: 16 },
+                      { header: "Judul", key: "title", width: 28 },
+                      { header: "Kategori", key: "category", width: 16 },
+                      { header: "Tanggal", key: "workDate", width: 14 },
+                      { header: "Jam Mulai", key: "startTime", width: 12 },
+                      { header: "Jam Selesai", key: "endTime", width: 12 },
+                      { header: "Lokasi", key: "location", width: 20 },
+                      { header: "CSO Dibutuhkan", key: "requiredCso", width: 14 },
+                      { header: "Progress", key: "progress", width: 12, format: (v) => `${v}%` },
+                      { header: "Komisi", key: "commission", width: 16, format: (v) => formatCurrency(v as number) },
+                      { header: "Status", key: "status", width: 14, format: (v) => getStatusLabel(v as import("@/types").WorkOrderStatus) },
+                    ],
+                    data: data as unknown as Record<string, unknown>[],
+                  });
+                }}
+              />
+            </div>
           </CardHeader>
           <CardContent>
             <Tabs value={listView} onValueChange={(v) => v && setListView(v)}>
@@ -193,7 +230,7 @@ export default function TrackingWoMitraPage() {
                     <TableBody>
                       {filtered.length === 0 ? (
                         <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground py-8">Tidak ada WO</TableCell></TableRow>
-                      ) : filtered.map((wo) => (
+                      ) : paginatedFiltered.map((wo) => (
                         <TableRow key={wo.id}>
                           <TableCell className="font-mono text-xs">{wo.id}</TableCell>
                           <TableCell className="max-w-[140px] truncate font-medium">{wo.title}</TableCell>
@@ -234,6 +271,14 @@ export default function TrackingWoMitraPage() {
                     </TableBody>
                   </Table>
                 </div>
+                <PaginationControls
+                  totalItems={filtered.length}
+                  currentPage={currentPage}
+                  pageSize={pageSize}
+                  onPageChange={setCurrentPage}
+                  onPageSizeChange={setPageSize}
+                  itemLabel="WO"
+                />
               </TabsContent>
             </Tabs>
           </CardContent>
