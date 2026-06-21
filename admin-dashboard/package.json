@@ -7,7 +7,7 @@
     "dev:clean": "rimraf .next && node --max-old-space-size=2048 node_modules/.bin/next dev --turbopack",
     "dev:webpack": "node --max-old-space-size=2048 node_modules/.bin/next dev",
     "clean": "rimraf .next",
-    "build": "next build",
+    "build": "NODE_OPTIONS='--max-old-space-size=4096' next build",
     "start": "next start",
     "lint": "eslint"
   },
